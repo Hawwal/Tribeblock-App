@@ -26,6 +26,7 @@ const envSchema = z.object({
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),
   GITHUB_REDIRECT_URI: z.string().url().optional(),
+  ADMIN_EMAILS: z.string().optional(),
 });
 
 export function validateEnv(config: Record<string, unknown>) {

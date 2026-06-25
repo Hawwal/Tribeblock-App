@@ -117,7 +117,7 @@ const Pricing: React.FC = () => {
     fetchPlans()
       .then((backendPlans) => {
         if (isMounted) {
-          setPlans(backendPlans.map(toPricingPlan));
+          setPlans(backendPlans.length > 0 ? backendPlans.map(toPricingPlan) : fallbackPlans);
         }
       })
       .catch(() => {

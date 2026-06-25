@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { BillingInterval, Currency, SubscriptionStatus } from '@prisma/client';
+import { BillingInterval, Currency, SubscriptionStatus, SubscriptionTier } from '@prisma/client';
 import { PaymentsService } from '../payments/payments.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -16,7 +16,18 @@ export class SubscriptionsService {
     private readonly paymentsService: PaymentsService,
   ) {}
 
-  listPlans() {
+  async listPlans() {
+    const plans = await this.prisma.subscriptionPlan.findMany({
+      where: { isActive: true },
+      orderBy: { monthlyPriceUsd: 'asc' },
+    });
+
+    if (plans.length > 0) {
+      return plans;
+    }
+
+    await this.ensureDefaultPlans();
+
     return this.prisma.subscriptionPlan.findMany({
       where: { isActive: true },
       orderBy: { monthlyPriceUsd: 'asc' },
@@ -113,5 +124,42 @@ export class SubscriptionsService {
     }
 
     return next;
+  }
+
+  private async ensureDefaultPlans() {
+    const plans = [
+      {
+        tier: SubscriptionTier.BASIC,
+        name: 'Basic',
+        description: 'Free foundational programming courses with IDE practice, quizzes, exams, and badges.',
+        monthlyPriceUsd: '0',
+        yearlyPriceUsd: '0',
+        features: ['10 foundational courses', 'IDE practicals', 'Quizzes and exams', 'Fundamental course badges'],
+      },
+      {
+        tier: SubscriptionTier.PLUS,
+        name: 'Plus',
+        description: 'Project-based learning for committed builders.',
+        monthlyPriceUsd: '19',
+        yearlyPriceUsd: '190',
+        features: ['All courses', 'Guided build projects', 'Structured IDE checkpoints', 'Career path progress'],
+      },
+      {
+        tier: SubscriptionTier.PRO,
+        name: 'Pro',
+        description: 'Career-path training with certificates, review workflow, and portfolio proof.',
+        monthlyPriceUsd: '39',
+        yearlyPriceUsd: '390',
+        features: ['Everything in Plus', 'NFT certificates', 'Mentor review workflow', 'Advanced credential proof'],
+      },
+    ];
+
+    for (const plan of plans) {
+      await this.prisma.subscriptionPlan.upsert({
+        where: { tier: plan.tier },
+        update: plan,
+        create: plan,
+      });
+    }
   }
 }

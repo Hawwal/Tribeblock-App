@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { UserRole } from '@prisma/client';
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'crypto';
 import { promisify } from 'util';
 import { PrismaService } from '../prisma/prisma.service';
@@ -174,6 +175,7 @@ export class AuthService {
           displayName: credential.user.displayName || profile.displayName,
           avatarUrl: credential.user.avatarUrl ?? profile.avatarUrl,
           emailVerifiedAt: credential.user.emailVerifiedAt ?? (profile.emailVerified ? new Date() : null),
+          role: this.roleForEmail(profile.email, credential.user.role),
         },
         select: this.userSelect(),
       });
@@ -189,6 +191,7 @@ export class AuthService {
         data: {
           avatarUrl: existingUser.avatarUrl ?? profile.avatarUrl,
           emailVerifiedAt: existingUser.emailVerifiedAt ?? (profile.emailVerified ? new Date() : null),
+          role: this.roleForEmail(profile.email, existingUser.role),
           credentials: {
             create: {
               provider,
@@ -210,6 +213,7 @@ export class AuthService {
         handle: await this.uniqueHandle(handleBase),
         avatarUrl: profile.avatarUrl,
         emailVerifiedAt: profile.emailVerified ? new Date() : null,
+        role: this.roleForEmail(profile.email),
         credentials: {
           create: {
             provider,
@@ -371,6 +375,19 @@ export class AuthService {
       isPublicProfile: true,
       emailVerifiedAt: true,
     };
+  }
+
+  private roleForEmail(email: string, existingRole: UserRole = UserRole.STUDENT) {
+    if (existingRole === UserRole.ADMIN) {
+      return existingRole;
+    }
+
+    const adminEmails = (this.config.get<string>('ADMIN_EMAILS') ?? '')
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+
+    return adminEmails.includes(email.toLowerCase()) ? UserRole.ADMIN : existingRole;
   }
 
   private sessionResponse(user: {

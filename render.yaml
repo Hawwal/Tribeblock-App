@@ -52,3 +52,5 @@ services:
         sync: false
       - key: GITHUB_REDIRECT_URI
         sync: false
+      - key: ADMIN_EMAILS
+        sync: false

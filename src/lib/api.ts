@@ -257,7 +257,8 @@ export async function fetchContributorRewards(input: { githubUsername?: string; 
 
 export async function loadCoursesWithFallback(): Promise<ApiCourse[]> {
   try {
-    return await fetchCourses();
+    const courses = await fetchCourses();
+    return courses.length > 0 ? courses : fallbackCourses;
   } catch {
     return fallbackCourses;
   }
@@ -273,7 +274,8 @@ export async function loadCourseWithFallback(slug: string): Promise<ApiCourse | 
 
 export async function loadCareerPathsWithFallback(): Promise<ApiLearningPath[]> {
   try {
-    return await fetchCareerPaths();
+    const paths = await fetchCareerPaths();
+    return paths.length > 0 ? paths : fallbackLearningPaths;
   } catch {
     return fallbackLearningPaths;
   }

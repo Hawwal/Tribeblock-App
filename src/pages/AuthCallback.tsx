@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { AlertCircle, CheckCircle } from 'lucide-react';
 import { saveSession, type AuthSession } from '@/lib/auth';
 
 const AuthCallback: React.FC = () => {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [error, setError] = useState(searchParams.get('error') ?? '');
 
@@ -21,11 +20,13 @@ const AuthCallback: React.FC = () => {
       const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
       const session = JSON.parse(window.atob(padded)) as AuthSession;
       saveSession(session);
-      navigate('/dashboard', { replace: true });
+      window.setTimeout(() => {
+        window.location.replace('/dashboard');
+      }, 50);
     } catch {
       setError('The returned auth session could not be read.');
     }
-  }, [navigate]);
+  }, []);
 
   return (
     <main className="min-h-screen bg-background flex items-center justify-center px-4">

@@ -26,6 +26,7 @@ GOOGLE_REDIRECT_URI=https://your-render-api.onrender.com/api/auth/oauth/google/c
 GITHUB_CLIENT_ID=github_client_id
 GITHUB_CLIENT_SECRET=github_client_secret
 GITHUB_REDIRECT_URI=https://your-render-api.onrender.com/api/auth/oauth/github/callback
+ADMIN_EMAILS=your-admin-gmail@example.com
 ```
 
 Render will set `DATABASE_URL` from the managed Postgres database.
