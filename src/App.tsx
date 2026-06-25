@@ -1,11 +1,6 @@
-import React, { useMemo } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import React from 'react';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
-import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
-import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
-import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
-import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
-import { clusterApiUrl } from '@solana/web3.js';
 
 // Pages
 import Index from './pages/Index';
@@ -14,35 +9,44 @@ import Accelerator from './pages/Accelerator';
 import CourseCatalog from './pages/CourseCatalog';
 import CourseDetail from './pages/CourseDetail';
 import Learn from './pages/Learn';
-
-import '@solana/wallet-adapter-react-ui/styles.css';
+import StudentDashboard from './pages/StudentDashboard';
+import AuthCallback from './pages/AuthCallback';
+import Contributors from './pages/Contributors';
+import Rewards from './pages/Rewards';
+import AdminDashboard from './pages/AdminDashboard';
+import CertificateVerification from './pages/CertificateVerification';
 
 const App = () => {
-    const network = WalletAdapterNetwork.Devnet;
-    const endpoint = useMemo(() => clusterApiUrl(network), [network]);
+    const location = useLocation();
 
-    const wallets = useMemo(() => [
-        new PhantomWalletAdapter(),
-        new SolflareWalletAdapter()
-    ], []);
+    React.useEffect(() => {
+        if (!location.hash) return;
+
+        const target = document.querySelector(location.hash);
+        window.setTimeout(() => {
+            target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 50);
+    }, [location.pathname, location.hash]);
 
     return (
-        <ConnectionProvider endpoint={endpoint}>
-            <WalletProvider wallets={wallets} autoConnect>
-                <WalletModalProvider>
-                    <Routes>
-                        <Route path="/" element={<Index />} />
-                        <Route path="/accelerator" element={<Accelerator />} />
-                        <Route path="/courses" element={<CourseCatalog />} />
-                        <Route path="/course/:slug" element={<CourseDetail />} />
-                        <Route path="/learn/:courseId/:lessonId" element={<Learn />} />
-                        <Route path="/learn/:courseId" element={<Learn />} />
-                        <Route path="*" element={<NotFound />} />
-                    </Routes>
-                    <Toaster />
-                </WalletModalProvider>
-            </WalletProvider>
-        </ConnectionProvider>
+        <>
+            <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/accelerator" element={<Accelerator />} />
+                <Route path="/courses" element={<CourseCatalog />} />
+                <Route path="/course/:slug" element={<CourseDetail />} />
+                <Route path="/dashboard" element={<StudentDashboard />} />
+                <Route path="/contributors" element={<Contributors />} />
+                <Route path="/rewards" element={<Rewards />} />
+                <Route path="/admin" element={<AdminDashboard />} />
+                <Route path="/certificates/:certificateNumber" element={<CertificateVerification />} />
+                <Route path="/auth/callback" element={<AuthCallback />} />
+                <Route path="/learn/:courseId/:lessonId" element={<Learn />} />
+                <Route path="/learn/:courseId" element={<Learn />} />
+                <Route path="*" element={<NotFound />} />
+            </Routes>
+            <Toaster />
+        </>
     );
 };
 

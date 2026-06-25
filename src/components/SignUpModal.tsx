@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Mail, Fingerprint, Eye, EyeOff, Check, AlertCircle } from 'lucide-react';
+import { X, Mail, Fingerprint, Eye, EyeOff, Check, AlertCircle, Github } from 'lucide-react';
 import tribeBlockLogo from '@/assets/tribe-block-logo.png';
+import { loginWithEmail, registerWithEmail, startOAuth } from '@/lib/auth';
 
 interface SignUpModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-type SignUpMethod = 'options' | 'email' | 'passkey';
+type SignUpMethod = 'options' | 'email' | 'login' | 'passkey';
 
 const GoogleIcon = () => (
   <svg viewBox="0 0 24 24" width="20" height="20">
@@ -25,6 +26,7 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [passkeyEmail, setPasskeyEmail] = useState('');
+  const [statusMessage, setStatusMessage] = useState('');
   
   // Email form state
   const [formData, setFormData] = useState({
@@ -49,26 +51,43 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
   const passwordRequirements = validatePassword(formData.password);
   const passwordStrength = Object.values(passwordRequirements).filter(Boolean).length;
 
-  const handleGoogleSignUp = async () => {
+  const handleOAuth = async (provider: 'google' | 'github') => {
     setIsLoading(true);
-    // Simulate Google OAuth
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setIsLoading(false);
-    alert('Google Sign Up - would redirect to OAuth');
-    onClose();
+    setErrors({});
+    setStatusMessage('');
+
+    try {
+      const response = await startOAuth(provider);
+
+      if (response.configured && response.authorizationUrl) {
+        window.location.href = response.authorizationUrl;
+        return;
+      }
+
+      setErrors({
+        general:
+          response.message ??
+          `${provider === 'google' ? 'Google' : 'GitHub'} sign in is not configured yet.`,
+      });
+    } catch (error) {
+      setErrors({
+        general: error instanceof Error ? error.message : 'Unable to start sign in.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handlePasskeySignUp = async () => {
     if (!passkeyEmail) {
-      alert('Please enter your email first');
+      setErrors({ passkeyEmail: 'Please enter your email first.' });
       return;
     }
-    setIsLoading(true);
-    // Simulate passkey registration
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setIsLoading(false);
-    alert('Passkey Sign Up - would prompt biometric authentication');
-    onClose();
+
+    setErrors({});
+    setStatusMessage(
+      'Passkeys are staged for the next auth hardening pass. The backend still needs WebAuthn challenge and credential endpoints before this can create an account.',
+    );
   };
 
   const handleEmailSignUp = async (e: React.FormEvent) => {
@@ -86,10 +105,49 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
 
     if (Object.keys(newErrors).length === 0) {
       setIsLoading(true);
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      setIsLoading(false);
-      alert('Account created! Check your email to verify.');
-      onClose();
+      try {
+        await registerWithEmail({
+          displayName: formData.fullName.trim(),
+          email: formData.email.trim(),
+          password: formData.password,
+        });
+        setStatusMessage('Account created. You are signed in locally for development.');
+        window.setTimeout(handleClose, 700);
+      } catch (error) {
+        setErrors({
+          general: error instanceof Error ? error.message : 'Unable to create your account.',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const newErrors: Record<string, string> = {};
+
+    if (!formData.email.trim()) newErrors.email = 'Email is required';
+    if (!formData.password) newErrors.password = 'Password is required';
+
+    setErrors(newErrors);
+
+    if (Object.keys(newErrors).length === 0) {
+      setIsLoading(true);
+      try {
+        await loginWithEmail({
+          email: formData.email.trim(),
+          password: formData.password,
+        });
+        setStatusMessage('Signed in.');
+        window.setTimeout(handleClose, 500);
+      } catch (error) {
+        setErrors({
+          general: error instanceof Error ? error.message : 'Unable to sign in.',
+        });
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -104,6 +162,8 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
     });
     setPasskeyEmail('');
     setErrors({});
+    setStatusMessage('');
+    setIsLoading(false);
   };
 
   const handleClose = () => {
@@ -151,21 +211,44 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
                   Join Tribe Block University
                 </h2>
                 <p className="text-muted-foreground">
-                  Start learning blockchain development today
+                  Start learning programming, Web3, AI, and career skills today
                 </p>
               </div>
+
+              {errors.general && (
+                <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive flex items-start gap-2">
+                  <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                  <span>{errors.general}</span>
+                </div>
+              )}
+
+              {statusMessage && (
+                <div className="mb-4 rounded-xl border border-green-500/30 bg-green-500/10 p-3 text-sm text-green-700 flex items-start gap-2">
+                  <Check size={16} className="mt-0.5 flex-shrink-0" />
+                  <span>{statusMessage}</span>
+                </div>
+              )}
 
               {/* Sign Up Options */}
               {method === 'options' && (
                 <div className="space-y-4">
                   {/* Google Sign Up */}
                   <button
-                    onClick={handleGoogleSignUp}
+                    onClick={() => handleOAuth('google')}
                     disabled={isLoading}
                     className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-border rounded-xl hover:bg-secondary/50 transition-colors disabled:opacity-50"
                   >
                     <GoogleIcon />
                     <span className="font-medium text-foreground">Continue with Google</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleOAuth('github')}
+                    disabled={isLoading}
+                    className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-border rounded-xl hover:bg-secondary/50 transition-colors disabled:opacity-50"
+                  >
+                    <Github size={20} />
+                    <span className="font-medium text-foreground">Continue with GitHub</span>
                   </button>
 
                   {/* Passkey Sign Up */}
@@ -201,9 +284,17 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
                   {/* Login Link */}
                   <p className="text-center text-muted-foreground">
                     Already have an account?{' '}
-                    <a href="/login" className="text-primary hover:underline font-medium">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setErrors({});
+                        setStatusMessage('');
+                        setMethod('login');
+                      }}
+                      className="text-primary hover:underline font-medium"
+                    >
                       Log In
-                    </a>
+                    </button>
                   </p>
                 </div>
               )}
@@ -215,7 +306,7 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
                     onClick={() => setMethod('options')}
                     className="text-sm text-muted-foreground hover:text-foreground mb-4"
                   >
-                    ← Back to options
+                    Back to options
                   </button>
 
                   <div className="text-center mb-6">
@@ -235,10 +326,22 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
                     <input
                       type="email"
                       value={passkeyEmail}
-                      onChange={(e) => setPasskeyEmail(e.target.value)}
+                      onChange={(e) => {
+                        setPasskeyEmail(e.target.value);
+                        setErrors({});
+                        setStatusMessage('');
+                      }}
                       placeholder="Enter your email"
-                      className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      className={`w-full px-4 py-3 rounded-xl border bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 ${
+                        errors.passkeyEmail ? 'border-destructive' : 'border-border'
+                      }`}
                     />
+                    {errors.passkeyEmail && (
+                      <p className="text-destructive text-xs mt-1 flex items-center gap-1">
+                        <AlertCircle size={12} />
+                        {errors.passkeyEmail}
+                      </p>
+                    )}
                   </div>
 
                   <button
@@ -259,7 +362,7 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
                     onClick={() => setMethod('options')}
                     className="text-sm text-muted-foreground hover:text-foreground mb-4"
                   >
-                    ← Back to options
+                    Back to options
                   </button>
 
                   {/* Full Name */}
@@ -407,9 +510,9 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
                     />
                     <label htmlFor="terms" className="text-sm text-muted-foreground">
                       I agree to the{' '}
-                      <a href="/terms" className="text-primary hover:underline">Terms of Service</a>
+                      <a href="/#pricing" className="text-primary hover:underline">Terms of Service</a>
                       {' '}and{' '}
-                      <a href="/privacy" className="text-primary hover:underline">Privacy Policy</a>
+                      <a href="/#pricing" className="text-primary hover:underline">Privacy Policy</a>
                     </label>
                   </div>
                   {errors.agreeToTerms && (
@@ -426,6 +529,107 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
                   >
                     {isLoading ? 'Creating Account...' : 'Create Account'}
                   </button>
+
+                  <p className="text-center text-sm text-muted-foreground">
+                    Already have an account?{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setErrors({});
+                        setStatusMessage('');
+                        setMethod('login');
+                      }}
+                      className="text-primary hover:underline font-medium"
+                    >
+                      Log In
+                    </button>
+                  </p>
+                </form>
+              )}
+
+              {method === 'login' && (
+                <form onSubmit={handleEmailLogin} className="space-y-4">
+                  <button
+                    type="button"
+                    onClick={() => setMethod('options')}
+                    className="text-sm text-muted-foreground hover:text-foreground mb-4"
+                  >
+                    Back to options
+                  </button>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">
+                      Email Address
+                    </label>
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="john@example.com"
+                      className={`w-full px-4 py-3 rounded-xl border bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 ${
+                        errors.email ? 'border-destructive' : 'border-border'
+                      }`}
+                    />
+                    {errors.email && (
+                      <p className="text-destructive text-xs mt-1 flex items-center gap-1">
+                        <AlertCircle size={12} />
+                        {errors.email}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">
+                      Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        placeholder="Password"
+                        className={`w-full px-4 py-3 rounded-xl border bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 pr-10 ${
+                          errors.password ? 'border-destructive' : 'border-border'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                    {errors.password && (
+                      <p className="text-destructive text-xs mt-1 flex items-center gap-1">
+                        <AlertCircle size={12} />
+                        {errors.password}
+                      </p>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full btn-primary py-3"
+                  >
+                    {isLoading ? 'Signing In...' : 'Log In'}
+                  </button>
+
+                  <p className="text-center text-sm text-muted-foreground">
+                    New to Tribe Block?{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setErrors({});
+                        setStatusMessage('');
+                        setMethod('email');
+                      }}
+                      className="text-primary hover:underline font-medium"
+                    >
+                      Create an account
+                    </button>
+                  </p>
                 </form>
               )}
             </div>

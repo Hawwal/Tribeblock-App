@@ -1,46 +1,51 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Twitter, Github, Linkedin, Youtube, Mail } from 'lucide-react';
+import { Twitter, Github, Instagram, Mail } from 'lucide-react';
 import tribeBlockLogo from '@/assets/tribe-block-logo.png';
 
 const Footer: React.FC = () => {
   const currentYear = new Date().getFullYear();
+  const [newsletterEmail, setNewsletterEmail] = useState('');
+  const [newsletterStatus, setNewsletterStatus] = useState('');
 
   const footerLinks = {
     courses: [
       { name: 'Frontend Development', href: '/courses?category=frontend' },
       { name: 'Backend Development', href: '/courses?category=backend' },
       { name: 'Blockchain & Web3', href: '/courses?category=blockchain' },
-      { name: 'Data Science', href: '/courses?category=data-science' },
+      { name: 'Data Science', href: '/courses?category=data' },
       { name: 'All Courses', href: '/courses' },
     ],
     company: [
-      { name: 'About Us', href: '/about' },
-      { name: 'Careers', href: '/careers' },
-      { name: 'Blog', href: '/blog' },
-      { name: 'Press', href: '/press' },
-      { name: 'Partners', href: '/partners' },
+      { name: 'About Us', href: '/#features' },
+      { name: 'Pricing', href: '/#pricing' },
+      { name: 'Courses', href: '/courses' },
+      { name: 'Contributors', href: '/contributors' },
+      { name: 'Rewards', href: '/rewards' },
+      { name: 'Accelerator', href: '/accelerator' },
+      { name: 'Student Dashboard', href: '/dashboard' },
     ],
     resources: [
-      { name: 'Documentation', href: '/docs' },
-      { name: 'Community Forum', href: '/community' },
-      { name: 'Help Center', href: '/help' },
+      { name: 'Course Catalog', href: '/courses' },
+      { name: 'Learning Paths', href: '/#courses' },
+      { name: 'Certificates', href: '/#certificates' },
+      { name: 'Contributor Program', href: '/contributors' },
+      { name: 'G$ Rewards', href: '/rewards' },
       { name: 'Accelerator', href: '/accelerator' },
-      { name: 'Events', href: '/events' },
+      { name: 'Subscription Plans', href: '/#pricing' },
     ],
     legal: [
-      { name: 'Terms of Service', href: '/terms' },
-      { name: 'Privacy Policy', href: '/privacy' },
-      { name: 'Cookie Policy', href: '/cookies' },
-      { name: 'Refund Policy', href: '/refund' },
+      { name: 'Terms of Service', href: '/#pricing' },
+      { name: 'Privacy Policy', href: '/#pricing' },
+      { name: 'Cookie Policy', href: '/#pricing' },
+      { name: 'Refund Policy', href: '/#pricing' },
     ],
   };
 
   const socialLinks = [
-    { name: 'Twitter', icon: Twitter, href: 'https://twitter.com/tribeblock' },
-    { name: 'GitHub', icon: Github, href: 'https://github.com/tribeblock' },
-    { name: 'LinkedIn', icon: Linkedin, href: 'https://linkedin.com/company/tribeblock' },
-    { name: 'YouTube', icon: Youtube, href: 'https://youtube.com/@tribeblock' },
+    { name: 'GitHub', icon: Github, href: 'https://github.com/Tribe-Block-University' },
+    { name: 'Instagram', icon: Instagram, href: 'https://instagram.com/tribeblock' },
+    { name: 'Twitter', icon: Twitter, href: 'https://x.com/tribeblock' },
   ];
 
   return (
@@ -151,12 +156,22 @@ const Footer: React.FC = () => {
               <h4 className="font-semibold text-foreground mb-1">Subscribe to our newsletter</h4>
               <p className="text-muted-foreground text-sm">Get the latest courses and updates delivered to your inbox.</p>
             </div>
-            <form className="flex gap-2 w-full md:w-auto">
+            <form
+              className="flex gap-2 w-full md:w-auto"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setNewsletterStatus('Thanks. Newsletter signup is ready for provider integration.');
+                setNewsletterEmail('');
+              }}
+            >
               <div className="relative flex-1 md:w-64">
                 <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
                   type="email"
+                  value={newsletterEmail}
+                  onChange={(event) => setNewsletterEmail(event.target.value)}
                   placeholder="Enter your email"
+                  required
                   className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm"
                 />
               </div>
@@ -165,6 +180,9 @@ const Footer: React.FC = () => {
               </button>
             </form>
           </div>
+          {newsletterStatus && (
+            <p className="text-sm text-primary mt-4">{newsletterStatus}</p>
+          )}
         </div>
 
         {/* Bottom Bar */}
@@ -173,7 +191,7 @@ const Footer: React.FC = () => {
             © {currentYear} Tribe Block University. All rights reserved.
           </p>
           <div className="flex items-center gap-6 text-sm text-muted-foreground">
-            <span>Made with ❤️ for the blockchain community</span>
+            <span>Built for the Tribe Block learning community</span>
           </div>
         </div>
       </div>

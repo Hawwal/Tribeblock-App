@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, X, ChevronDown, Rocket, Wallet } from 'lucide-react';
+import { Menu, X, ChevronDown, Rocket, LogOut, UserCircle, Wallet, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useWallet } from '@solana/wallet-adapter-react';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import tribeBlockLogo from '@/assets/tribe-block-logo.png';
+import { AUTH_SESSION_EVENT, clearSession, getSession, type AuthSession } from '@/lib/auth';
+import { connectCeloWallet, formatWalletAddress, getConnectedWallet, WALLET_EVENT, type ConnectedWallet } from '@/lib/wallet';
 
 interface HeaderProps {
   onSignUpClick?: () => void;
@@ -13,23 +13,64 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCoursesOpen, setIsCoursesOpen] = useState(false);
-  const { connected } = useWallet();
+  const [session, setSession] = useState<AuthSession | null>(() => getSession());
+  const [wallet, setWallet] = useState<ConnectedWallet | null>(() => getConnectedWallet());
+  const [walletError, setWalletError] = useState('');
 
   const navLinks = [
     { name: 'Home', href: '/' },
     { name: 'Courses', href: '/courses', hasDropdown: true },
     { name: 'Pricing', href: '/#pricing' },
-    { name: 'About', href: '/#about' },
+    { name: 'Contribute', href: '/contributors' },
+    { name: 'Rewards', href: '/rewards' },
+    { name: 'About', href: '/#features' },
   ];
 
   const courseCategories = [
     { name: 'Frontend Development', href: '/courses?category=frontend' },
     { name: 'Backend Development', href: '/courses?category=backend' },
     { name: 'Blockchain & Web3', href: '/courses?category=blockchain' },
-    { name: 'Data Science & AI', href: '/courses?category=data-science' },
+    { name: 'Data Science & AI', href: '/courses?category=data' },
     { name: 'DevOps & Cloud', href: '/courses?category=devops' },
     { name: 'View All Courses', href: '/courses' },
   ];
+
+  const canOpenAdmin = session?.user.role === 'ADMIN' || session?.user.role === 'MENTOR_REVIEWER';
+
+  useEffect(() => {
+    const handleSessionChange = () => setSession(getSession());
+    const handleWalletChange = () => setWallet(getConnectedWallet());
+
+    window.addEventListener(AUTH_SESSION_EVENT, handleSessionChange);
+    window.addEventListener(WALLET_EVENT, handleWalletChange);
+    window.addEventListener('storage', handleSessionChange);
+    window.addEventListener('storage', handleWalletChange);
+
+    return () => {
+      window.removeEventListener(AUTH_SESSION_EVENT, handleSessionChange);
+      window.removeEventListener(WALLET_EVENT, handleWalletChange);
+      window.removeEventListener('storage', handleSessionChange);
+      window.removeEventListener('storage', handleWalletChange);
+    };
+  }, []);
+
+  const handleSignOut = () => {
+    clearSession();
+    setSession(null);
+    setIsMenuOpen(false);
+  };
+
+  const handleConnectWallet = async () => {
+    setWalletError('');
+
+    try {
+      const connectedWallet = await connectCeloWallet();
+      setWallet(connectedWallet);
+      setIsMenuOpen(false);
+    } catch (error) {
+      setWalletError(error instanceof Error ? error.message : 'Unable to connect wallet.');
+    }
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full bg-background/95 backdrop-blur-md border-b border-border">
@@ -105,15 +146,44 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
 
           {/* Desktop CTA */}
           <div className="hidden lg:flex items-center gap-4">
-            <button
-              onClick={onSignUpClick}
-              className="text-foreground/80 hover:text-foreground transition-colors font-medium"
-            >
-              Sign Up
+            {session ? (
+              <>
+                {canOpenAdmin && (
+                  <Link
+                    to="/admin"
+                    className="flex items-center gap-2 text-foreground/80 hover:text-foreground transition-colors font-medium"
+                  >
+                    <ShieldCheck size={18} className="text-primary" />
+                    Admin
+                  </Link>
+                )}
+                <Link
+                  to="/dashboard"
+                  className="flex items-center gap-2 text-foreground/80 hover:text-foreground transition-colors font-medium"
+                >
+                  <UserCircle size={18} className="text-primary" />
+                  <span className="max-w-32 truncate">{session.user.displayName}</span>
+                </Link>
+                <button
+                  onClick={handleSignOut}
+                  className="flex items-center gap-2 text-foreground/70 hover:text-foreground transition-colors font-medium"
+                >
+                  <LogOut size={16} />
+                  Sign Out
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={onSignUpClick}
+                className="text-foreground/80 hover:text-foreground transition-colors font-medium"
+              >
+                Sign Up
+              </button>
+            )}
+            <button type="button" onClick={handleConnectWallet} className="payment-cta gap-2">
+              <Wallet size={16} />
+              {wallet ? formatWalletAddress(wallet.address) : 'Connect Wallet'}
             </button>
-            <div className="wallet-adapter-button-wrapper">
-              <WalletMultiButton className="wallet-connect-btn" />
-            </div>
           </div>
 
           {/* Mobile Menu Button */}
@@ -187,18 +257,54 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
               </Link>
 
               <div className="pt-4 border-t border-border space-y-3">
+                {session ? (
+                  <>
+                    {canOpenAdmin && (
+                      <Link
+                        to="/admin"
+                        className="flex items-center justify-center gap-2 w-full text-foreground font-medium py-2"
+                        onClick={() => setIsMenuOpen(false)}
+                      >
+                        <ShieldCheck size={18} className="text-primary" />
+                        Admin
+                      </Link>
+                    )}
+                    <Link
+                      to="/dashboard"
+                      className="flex items-center justify-center gap-2 w-full text-foreground font-medium py-2"
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      <UserCircle size={18} className="text-primary" />
+                      {session.user.displayName}
+                    </Link>
+                    <button
+                      onClick={handleSignOut}
+                      className="flex items-center justify-center gap-2 w-full text-foreground font-medium py-2"
+                    >
+                      <LogOut size={16} />
+                      Sign Out
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      onSignUpClick?.();
+                    }}
+                    className="block w-full text-center text-foreground font-medium py-2"
+                  >
+                    Sign Up
+                  </button>
+                )}
                 <button
-                  onClick={() => {
-                    setIsMenuOpen(false);
-                    onSignUpClick?.();
-                  }}
-                  className="block w-full text-center text-foreground font-medium py-2"
+                  type="button"
+                  onClick={handleConnectWallet}
+                  className="payment-cta w-full justify-center gap-2"
                 >
-                  Sign Up
+                  <Wallet size={16} />
+                  {wallet ? formatWalletAddress(wallet.address) : 'Connect Wallet'}
                 </button>
-                <div className="wallet-adapter-button-wrapper w-full">
-                  <WalletMultiButton className="wallet-connect-btn w-full" />
-                </div>
+                {walletError && <p className="text-sm text-destructive text-center">{walletError}</p>}
               </div>
             </div>
           </motion.div>

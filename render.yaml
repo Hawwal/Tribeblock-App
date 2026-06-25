@@ -1,0 +1,54 @@
+databases:
+  - name: tribeblock-university-db
+    databaseName: tribeblock_university
+    user: tribeblock
+    plan: starter
+
+services:
+  - type: web
+    name: tribeblock-university-api
+    runtime: node
+    rootDir: backend
+    plan: starter
+    buildCommand: npm install && npm run prisma:generate && npm run prisma:deploy && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tribeblock-university-db
+          property: connectionString
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: CELO_CHAIN_ID
+        value: "42220"
+      - key: CELO_RPC_URL
+        value: https://forno.celo.org
+      - key: CELO_USDT_TOKEN_ADDRESS
+        value: 0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e
+      - key: CELO_USDT_DECIMALS
+        value: "6"
+      - key: CELO_PAYMENT_RECEIVER_ADDRESS
+        sync: false
+      - key: CELO_PAYMENT_CONTRACT_ADDRESS
+        sync: false
+      - key: CELO_CERTIFICATE_CONTRACT_ADDRESS
+        sync: false
+      - key: CERTIFICATE_MINTER_PRIVATE_KEY
+        sync: false
+      - key: CERTIFICATE_PUBLIC_BASE_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_REDIRECT_URI
+        sync: false

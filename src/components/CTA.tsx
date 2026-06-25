@@ -1,13 +1,25 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { ArrowRight, Rocket } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { getSession } from '@/lib/auth';
 
 interface CTAProps {
   onSignUpClick?: () => void;
 }
 
 const CTA: React.FC<CTAProps> = ({ onSignUpClick }) => {
+  const navigate = useNavigate();
+
+  const handleStartLearning = () => {
+    if (getSession()) {
+      navigate('/courses');
+      return;
+    }
+
+    onSignUpClick?.();
+  };
+
   return (
     <section className="section-padding bg-gradient-to-br from-primary/10 via-accent/5 to-primary/5">
       <div className="container mx-auto">
@@ -29,7 +41,7 @@ const CTA: React.FC<CTAProps> = ({ onSignUpClick }) => {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
             <button
-              onClick={onSignUpClick}
+              onClick={handleStartLearning}
               className="btn-primary text-base px-8 py-3.5 inline-flex items-center gap-2"
             >
               Start Learning Free

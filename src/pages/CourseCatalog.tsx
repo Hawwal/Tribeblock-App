@@ -1,15 +1,18 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Search, Star, Clock, Users, Filter, Grid, List, CheckCircle } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import SignUpModal from '@/components/SignUpModal';
-import { courses, categories, type Course } from '@/lib/courseData';
+import { courses as fallbackCourses, categories, type Course } from '@/lib/courseData';
+import { loadCoursesWithFallback } from '@/lib/api';
 
 const CourseCatalog: React.FC = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const [isSignUpOpen, setIsSignUpOpen] = useState(false);
+  const [catalogCourses, setCatalogCourses] = useState<Course[]>(fallbackCourses);
+  const [isLoadingCourses, setIsLoadingCourses] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>(
     searchParams.get('category') ? [searchParams.get('category')!] : []
@@ -19,8 +22,46 @@ const CourseCatalog: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showFilters, setShowFilters] = useState(false);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    loadCoursesWithFallback()
+      .then((loadedCourses) => {
+        if (isMounted) {
+          setCatalogCourses(loadedCourses);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingCourses(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const availableCategories = useMemo(() => {
+    const uniqueCategories = Array.from(
+      new Map(
+        catalogCourses.map((course) => [
+          course.categorySlug,
+          {
+            name: course.category,
+            slug: course.categorySlug,
+            icon: categoryIcon(course.categorySlug),
+            courseCount: catalogCourses.filter((item) => item.categorySlug === course.categorySlug).length,
+          },
+        ]),
+      ).values(),
+    );
+
+    return uniqueCategories.length > 0 ? uniqueCategories : categories;
+  }, [catalogCourses]);
+
   const filteredCourses = useMemo(() => {
-    let result = [...courses];
+    let result = [...catalogCourses];
 
     // Search filter
     if (searchQuery) {
@@ -63,7 +104,7 @@ const CourseCatalog: React.FC = () => {
     }
 
     return result;
-  }, [searchQuery, selectedCategories, selectedLevel, sortBy]);
+  }, [catalogCourses, searchQuery, selectedCategories, selectedLevel, sortBy]);
 
   const toggleCategory = (slug: string) => {
     setSelectedCategories(prev =>
@@ -200,11 +241,11 @@ const CourseCatalog: React.FC = () => {
           <div className="space-y-1 mb-4">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <CheckCircle size={10} className="text-green-500" />
-              <span>Interactive</span>
+              <span>Text + IDE practice</span>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <CheckCircle size={10} className="text-green-500" />
-              <span>{course.projects} Projects</span>
+              <span>{course.projects} Plus/Pro projects</span>
             </div>
           </div>
 
@@ -227,10 +268,12 @@ const CourseCatalog: React.FC = () => {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-foreground mb-4">
-            Browse Our Courses
+            Browse Career Path Courses
           </h1>
           <p className="text-muted-foreground text-lg">
-            {courses.length} courses available with hands-on projects and interactive learning
+            {isLoadingCourses
+              ? 'Loading courses from the backend...'
+              : 'Text lessons, quizzes, IDE practice, and Plus/Pro build projects across the growing catalog'}
           </p>
         </div>
 
@@ -261,7 +304,7 @@ const CourseCatalog: React.FC = () => {
 
             {/* Category Filters */}
             <div className={`${showFilters ? 'flex' : 'hidden'} md:flex flex-wrap gap-2`}>
-              {categories.map(category => (
+              {availableCategories.map(category => (
                 <button
                   key={category.slug}
                   onClick={() => toggleCategory(category.slug)}
@@ -361,3 +404,14 @@ const CourseCatalog: React.FC = () => {
 };
 
 export default CourseCatalog;
+
+function categoryIcon(slug: string) {
+  if (slug === 'blockchain') return '⛓️';
+  if (slug === 'frontend') return '🎨';
+  if (slug === 'backend') return '⚙️';
+  if (slug === 'database' || slug === 'data') return '🗄️';
+  if (slug === 'mobile') return '📱';
+  if (slug === 'devops') return '☁️';
+  if (slug === 'data-science') return '🤖';
+  return '📚';
+}

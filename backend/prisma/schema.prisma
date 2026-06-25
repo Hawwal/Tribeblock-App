@@ -1,0 +1,606 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  STUDENT
+  INSTRUCTOR
+  MENTOR_REVIEWER
+  ADMIN
+}
+
+enum Currency {
+  USD
+  NGN
+  KES
+  GHS
+}
+
+enum SubscriptionTier {
+  BASIC
+  PLUS
+  PRO
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  INCOMPLETE
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum CourseStatus {
+  DRAFT
+  UNDER_REVIEW
+  CHANGES_REQUESTED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum CourseLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum ContentVisibility {
+  FREE
+  PREVIEW
+  PLUS
+  PRO
+}
+
+enum AssetType {
+  PDF
+  IMAGE
+  VIDEO
+  ZIP
+  LINK
+  DATASET
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  MULTI_SELECT
+  TRUE_FALSE
+  SHORT_ANSWER
+}
+
+enum ExerciseRuntime {
+  BROWSER_HTML_CSS_JS
+  NODE
+  TYPESCRIPT
+  PYTHON
+  JAVA
+  CPP
+  BASH
+  SQL
+  SOLIDITY
+}
+
+enum ProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum PaymentProvider {
+  CELO_USDT
+  LOCAL_BANK
+}
+
+enum PaymentStatus {
+  PENDING
+  REQUIRES_ACTION
+  CONFIRMED
+  FAILED
+  EXPIRED
+  REFUNDED
+}
+
+enum PaymentRail {
+  CELO
+  LOCAL_BANK
+}
+
+enum CertificateStatus {
+  PENDING
+  MINTING
+  MINTED
+  FAILED
+  REVOKED
+}
+
+enum ContributorApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ContributorExperienceLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+enum ContributorContributionStatus {
+  PENDING_REVIEW
+  APPROVED
+  CHANGES_REQUESTED
+  REWARDED
+}
+
+enum ContributorRewardStatus {
+  PENDING
+  READY
+  PAID
+  FAILED
+}
+
+model User {
+  id                String               @id @default(cuid())
+  email             String               @unique
+  emailVerifiedAt   DateTime?
+  passwordHash      String?
+  displayName       String
+  handle            String               @unique
+  bio               String?
+  avatarUrl         String?
+  role              UserRole             @default(STUDENT)
+  preferredCurrency Currency             @default(USD)
+  isPublicProfile   Boolean              @default(true)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  credentials       AuthCredential[]
+  payments          PaymentIntent[]
+  subscriptions     Subscription[]
+  enrollments       Enrollment[]
+  lessonProgress    LessonProgress[]
+  exerciseAttempts  ExerciseAttempt[]
+  codeDrafts        CodeDraft[]
+  badges            UserBadge[]
+  certificates      Certificate[]
+  authoredCourses   Course[]             @relation("CourseAuthor")
+  reviews           CourseReview[]       @relation("CourseReviewer")
+}
+
+model AuthCredential {
+  id                  String   @id @default(cuid())
+  userId              String
+  provider            String
+  providerAccountId   String
+  publicKey           String?
+  credentialId        String?
+  counter             Int?
+  createdAt           DateTime @default(now())
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model SubscriptionPlan {
+  id              String              @id @default(cuid())
+  tier            SubscriptionTier
+  name            String
+  description     String
+  monthlyPriceUsd Decimal             @db.Decimal(10, 2)
+  yearlyPriceUsd  Decimal             @db.Decimal(10, 2)
+  features        String[]
+  isActive        Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  subscriptions   Subscription[]
+
+  @@unique([tier])
+}
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  userId             String
+  planId             String
+  tier               SubscriptionTier
+  interval           BillingInterval
+  status             SubscriptionStatus @default(INCOMPLETE)
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan               SubscriptionPlan   @relation(fields: [planId], references: [id])
+  payments           PaymentIntent[]
+
+  @@index([userId, status])
+}
+
+model PaymentIntent {
+  id                    String          @id @default(cuid())
+  userId                String
+  subscriptionId        String?
+  provider              PaymentProvider
+  rail                  PaymentRail
+  currency              Currency
+  amount                Decimal         @db.Decimal(12, 2)
+  status                PaymentStatus   @default(PENDING)
+  reference             String          @unique
+  blockchainChainId     Int?
+  blockchainToken       String?
+  blockchainTokenSymbol String?
+  blockchainDecimals    Int?
+  receiverAddress       String?
+  transactionHash       String?
+  providerMetadata      Json?
+  expiresAt             DateTime?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription          Subscription?   @relation(fields: [subscriptionId], references: [id])
+
+  @@index([userId, status])
+  @@index([transactionHash])
+}
+
+model CareerPath {
+  id          String       @id @default(cuid())
+  slug        String       @unique
+  title       String
+  description String
+  sortOrder   Int          @default(0)
+  isPublished Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  courses     PathCourse[]
+}
+
+model PathCourse {
+  id           String     @id @default(cuid())
+  careerPathId String
+  courseId     String
+  sortOrder    Int        @default(0)
+  careerPath   CareerPath @relation(fields: [careerPathId], references: [id], onDelete: Cascade)
+  course       Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([careerPathId, courseId])
+}
+
+model Course {
+  id              String            @id @default(cuid())
+  slug            String            @unique
+  title           String
+  subtitle        String
+  description     String
+  category        String
+  level           CourseLevel       @default(BEGINNER)
+  status          CourseStatus      @default(DRAFT)
+  visibility      ContentVisibility @default(FREE)
+  isFreeBasic     Boolean           @default(false)
+  hasProProject   Boolean           @default(true)
+  estimatedHours  Int
+  languageTags    String[]
+  skillTags       String[]
+  sourceRepositoryUrl String?
+  sourcePath      String?
+  sourceProvider  String            @default("github")
+  sourceSyncEnabled Boolean         @default(true)
+  authorId        String?
+  publishedAt     DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  author          User?             @relation("CourseAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  pathLinks       PathCourse[]
+  modules         CourseModule[]
+  reviews         CourseReview[]
+  enrollments     Enrollment[]
+  certificates    Certificate[]
+}
+
+model CourseReview {
+  id          String       @id @default(cuid())
+  courseId    String
+  reviewerId  String?
+  status      CourseStatus
+  notes       String?
+  createdAt   DateTime     @default(now())
+  course      Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  reviewer    User?        @relation("CourseReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@index([courseId, createdAt])
+}
+
+model CourseModule {
+  id          String   @id @default(cuid())
+  courseId    String
+  title       String
+  summary     String
+  sortOrder   Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons     Lesson[]
+  projects    Project[]
+
+  @@unique([courseId, sortOrder])
+}
+
+model Lesson {
+  id              String            @id @default(cuid())
+  moduleId        String
+  slug            String
+  title           String
+  summary         String
+  bodyMarkdown    String
+  visibility      ContentVisibility @default(FREE)
+  sortOrder       Int
+  estimatedMinutes Int
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  module          CourseModule      @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  assets          LessonAsset[]
+  quizzes         Quiz[]
+  exercises       CodingExercise[]
+  progress        LessonProgress[]
+
+  @@unique([moduleId, slug])
+  @@unique([moduleId, sortOrder])
+}
+
+model LessonAsset {
+  id          String    @id @default(cuid())
+  lessonId    String
+  type        AssetType
+  title       String
+  url         String
+  license     String?
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  lesson      Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+}
+
+model Quiz {
+  id          String     @id @default(cuid())
+  lessonId    String
+  title       String
+  passingScore Int       @default(70)
+  sortOrder   Int        @default(0)
+  lesson      Lesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  questions   Question[]
+}
+
+model Question {
+  id            String       @id @default(cuid())
+  quizId        String
+  type          QuestionType
+  prompt        String
+  options       Json
+  correctAnswer Json
+  explanation   String?
+  sortOrder     Int          @default(0)
+  quiz          Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+}
+
+model CodingExercise {
+  id                 String            @id @default(cuid())
+  lessonId           String
+  slug               String
+  title              String
+  instructions       String
+  runtime            ExerciseRuntime
+  starterFiles       Json
+  solutionFiles      Json?
+  visibility         ContentVisibility @default(FREE)
+  sortOrder          Int               @default(0)
+  lesson             Lesson            @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  tests              ExerciseTest[]
+  attempts           ExerciseAttempt[]
+  drafts             CodeDraft[]
+
+  @@unique([lessonId, slug])
+}
+
+model ExerciseTest {
+  id          String         @id @default(cuid())
+  exerciseId  String
+  name        String
+  command     String?
+  assertion   String
+  isHidden    Boolean        @default(false)
+  sortOrder   Int            @default(0)
+  exercise    CodingExercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+}
+
+model Project {
+  id             String            @id @default(cuid())
+  moduleId       String
+  slug           String
+  title          String
+  briefMarkdown  String
+  runtime        ExerciseRuntime
+  starterFiles   Json
+  rubric         Json
+  visibility     ContentVisibility @default(PRO)
+  sortOrder      Int               @default(0)
+  module         CourseModule      @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([moduleId, slug])
+}
+
+model Enrollment {
+  id           String         @id @default(cuid())
+  userId       String
+  courseId     String
+  status       ProgressStatus @default(IN_PROGRESS)
+  startedAt    DateTime       @default(now())
+  completedAt  DateTime?
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course       Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+}
+
+model ContributorApplication {
+  id                String                       @id @default(cuid())
+  fullName          String
+  email             String
+  githubUsername    String
+  walletAddress     String
+  country           String
+  discordUsername   String?
+  twitterHandle     String?
+  skills            String[]
+  interests         String[]
+  experienceLevel   ContributorExperienceLevel
+  portfolioUrl      String?
+  agreementReviewed Boolean
+  agreementRewards  Boolean
+  status            ContributorApplicationStatus @default(PENDING)
+  adminNotes        String?
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+  contributions     ContributorContribution[]
+  rewards           ContributorReward[]
+
+  @@index([email])
+  @@index([githubUsername])
+  @@index([walletAddress])
+  @@index([status, createdAt])
+}
+
+model ContributorContribution {
+  id                  String                       @id @default(cuid())
+  contributorId       String?
+  githubUsername      String
+  repositoryUrl       String
+  pullRequestUrl      String?
+  commitSha           String?
+  title               String
+  contributionType    String
+  status              ContributorContributionStatus @default(PENDING_REVIEW)
+  approvedAt          DateTime?
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+  contributor         ContributorApplication?       @relation(fields: [contributorId], references: [id], onDelete: SetNull)
+  rewards             ContributorReward[]
+
+  @@index([githubUsername, status])
+  @@index([contributorId])
+}
+
+model ContributorReward {
+  id              String                    @id @default(cuid())
+  contributorId   String
+  contributionId  String?
+  amountGd        Decimal                   @db.Decimal(18, 2)
+  status          ContributorRewardStatus   @default(PENDING)
+  walletAddress   String
+  tokenSymbol     String                    @default("G$")
+  tokenAddress    String?
+  chainId         Int?
+  transactionHash String?
+  notes           String?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+  contributor     ContributorApplication    @relation(fields: [contributorId], references: [id], onDelete: Cascade)
+  contribution    ContributorContribution?  @relation(fields: [contributionId], references: [id], onDelete: SetNull)
+
+  @@index([contributorId, status])
+  @@index([walletAddress])
+  @@index([transactionHash])
+}
+
+model LessonProgress {
+  id          String         @id @default(cuid())
+  userId      String
+  lessonId    String
+  status      ProgressStatus @default(NOT_STARTED)
+  score       Int?
+  lastSeenAt  DateTime       @default(now())
+  completedAt DateTime?
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson      Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([userId, status])
+}
+
+model ExerciseAttempt {
+  id           String         @id @default(cuid())
+  userId       String
+  exerciseId   String
+  submittedFiles Json
+  passed       Boolean        @default(false)
+  testResults  Json?
+  runtimeMs    Int?
+  createdAt    DateTime       @default(now())
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercise     CodingExercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@index([userId, exerciseId])
+}
+
+model CodeDraft {
+  id          String         @id @default(cuid())
+  userId      String
+  exerciseId  String
+  files       Json
+  updatedAt   DateTime       @updatedAt
+  createdAt   DateTime       @default(now())
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercise    CodingExercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, exerciseId])
+}
+
+model Badge {
+  id          String      @id @default(cuid())
+  slug        String      @unique
+  title       String
+  description String
+  iconUrl     String?
+  createdAt   DateTime    @default(now())
+  users       UserBadge[]
+}
+
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  badgeId   String
+  earnedAt  DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge     Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+}
+
+model Certificate {
+  id                String            @id @default(cuid())
+  userId            String
+  courseId          String
+  status            CertificateStatus @default(PENDING)
+  certificateNumber String            @unique
+  metadataUri       String?
+  nftChainId        Int?
+  nftContract       String?
+  nftTokenId        String?
+  transactionHash   String?
+  verificationUrl   String?
+  issuedAt          DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course            Course            @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+}

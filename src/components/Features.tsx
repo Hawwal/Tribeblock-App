@@ -5,33 +5,33 @@ import { Code2, Trophy, Users, Zap, BookOpen, Shield } from 'lucide-react';
 const features = [
   {
     icon: Code2,
-    title: 'Interactive Code Editor',
-    description: 'Practice coding directly in your browser with our Monaco-powered editor. Real-time feedback and test cases included.',
+    title: 'In-App IDE Practice',
+    description: 'Practice each concept directly inside the learning workspace with starter files, console output, and test results.',
   },
   {
     icon: Trophy,
-    title: 'NFT Certificates',
-    description: 'Earn blockchain-verified NFT certificates upon course completion. Showcase your skills with verifiable credentials.',
+    title: 'Pro NFT Certificates',
+    description: 'Pro learners can earn blockchain-verified certificates after completing final exams and course projects.',
   },
   {
     icon: Users,
-    title: 'Expert Instructors',
-    description: 'Learn from industry professionals and blockchain experts with years of real-world experience.',
+    title: 'Instructor Review Flow',
+    description: 'Instructors can draft courses while mentors and admins review content before it goes live.',
   },
   {
     icon: Zap,
-    title: 'Hands-On Projects',
-    description: 'Build real projects with every course. Apply your knowledge immediately with practical exercises.',
+    title: 'Guided Build Projects',
+    description: 'Free foundations stay accessible while portfolio-ready build projects unlock on Plus and Pro.',
   },
   {
     icon: BookOpen,
-    title: '74+ Courses',
-    description: 'Comprehensive curriculum covering frontend, backend, blockchain, DevOps, data science, and more.',
+    title: 'Text-First Lessons',
+    description: 'Courses use original text lessons, interactive checkpoints, quizzes, cheatsheets, and guided exercises.',
   },
   {
     icon: Shield,
-    title: 'Career Support',
-    description: 'Get job-ready with resume reviews, interview prep, and access to our hiring partner network.',
+    title: 'Celo USDT Payments',
+    description: 'USD subscriptions are designed for Celo USDT, while NGN, KES, and GHS use local-bank rails later.',
   },
 ];
 
@@ -50,7 +50,7 @@ const Features: React.FC = () => {
             Why Choose Tribe Block?
           </h2>
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-            Everything you need to become a skilled blockchain developer
+            A staged learning platform for programming first, with design, blockchain, business, AI, and cybersecurity ready to follow
           </p>
         </motion.div>
 

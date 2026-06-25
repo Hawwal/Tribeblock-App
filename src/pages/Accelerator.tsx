@@ -144,10 +144,10 @@ const AcceleratorPage: React.FC = () => {
               transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
             >
               <div className="relative">
-                <Rocket size={100} className="text-orange-500 transform rotate-45" />
+                <Rocket size={100} className="text-primary transform rotate-45" />
                 {/* Flame Effect */}
                 <motion.div
-                  className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-8 h-16 bg-gradient-to-t from-orange-500 via-yellow-500 to-transparent rounded-full blur-sm"
+                  className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-8 h-16 bg-gradient-to-t from-primary via-accent to-transparent rounded-full blur-sm"
                   animate={{ height: [64, 80, 64], opacity: [0.8, 1, 0.8] }}
                   transition={{ duration: 0.5, repeat: Infinity }}
                 />

@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Star, Clock, Users, CheckCircle, ArrowRight } from 'lucide-react';
-import { getFeaturedCourses, learningPaths, type Course } from '@/lib/courseData';
+import { getFeaturedCourses, learningPaths as fallbackLearningPaths, type Course } from '@/lib/courseData';
+import { loadCareerPathsWithFallback, loadCoursesWithFallback, type ApiLearningPath } from '@/lib/api';
 
 const CourseCard: React.FC<{ course: Course; index: number }> = ({ course, index }) => {
   return (
@@ -58,15 +59,15 @@ const CourseCard: React.FC<{ course: Course; index: number }> = ({ course, index
         <div className="space-y-1.5 mb-4">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <CheckCircle size={12} className="text-green-500" />
-            <span>Interactive Learning</span>
+            <span>Text lessons and IDE practice</span>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <CheckCircle size={12} className="text-green-500" />
-            <span>Hands-on Practicals</span>
+            <span>Quizzes and coding exercises</span>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <CheckCircle size={12} className="text-green-500" />
-            <span>{course.projects} Real Projects</span>
+            <span>{course.projects} Plus/Pro build projects</span>
           </div>
         </div>
 
@@ -82,7 +83,23 @@ const CourseCard: React.FC<{ course: Course; index: number }> = ({ course, index
 };
 
 const Courses: React.FC = () => {
-  const featuredCourses = getFeaturedCourses().slice(0, 6);
+  const [featuredCourses, setFeaturedCourses] = useState<Course[]>(getFeaturedCourses().slice(0, 6));
+  const [learningPaths, setLearningPaths] = useState<ApiLearningPath[]>(fallbackLearningPaths);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    Promise.all([loadCoursesWithFallback(), loadCareerPathsWithFallback()]).then(([loadedCourses, loadedPaths]) => {
+      if (!isMounted) return;
+
+      setFeaturedCourses(loadedCourses.filter((course) => course.featured).slice(0, 6));
+      setLearningPaths(loadedPaths);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <section className="section-padding" id="courses">
@@ -99,7 +116,7 @@ const Courses: React.FC = () => {
             Start Learning Today
           </h2>
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-            All courses include hands-on practicals and real-world projects
+            Start with free foundational programming courses, then move into full career paths with guided projects on Plus or Pro
           </p>
         </motion.div>
 
@@ -122,7 +139,7 @@ const Courses: React.FC = () => {
             to="/courses"
             className="inline-flex items-center gap-2 text-primary font-semibold hover:gap-3 transition-all"
           >
-            View All 74 Courses
+            Browse Career Path Catalog
             <ArrowRight size={18} />
           </Link>
         </motion.div>
@@ -178,10 +195,10 @@ const Courses: React.FC = () => {
                 </div>
 
                 <Link
-                  to={`/learning-path/${path.id}`}
+                  to="/courses"
                   className="btn-primary w-full text-center text-sm py-2.5"
                 >
-                  Start This Path
+                  View Path Courses
                 </Link>
               </motion.div>
             ))}

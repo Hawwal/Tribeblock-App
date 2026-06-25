@@ -5,7 +5,7 @@ import tribeBlockLogo from '@/assets/tribe-block-logo.png';
 
 const NFTCertificates: React.FC = () => {
   return (
-    <section className="section-padding bg-gradient-to-br from-accent/5 to-primary/5">
+    <section className="section-padding bg-gradient-to-br from-accent/5 to-primary/5" id="certificates">
       <div className="container mx-auto">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           {/* Content */}
@@ -21,12 +21,12 @@ const NFTCertificates: React.FC = () => {
             </div>
             
             <h2 className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-foreground mb-6">
-              Earn NFT Certificates
+              Earn Pro NFT Certificates
             </h2>
             
             <p className="text-muted-foreground text-lg mb-8">
-              Complete courses and receive verifiable NFT certificates that prove your skills on the blockchain. 
-              Share your achievements with employers and stand out from the crowd.
+              Complete Pro course requirements and receive verifiable NFT certificates that prove your skills on-chain. 
+              Share your achievements with employers, mentors, and your portfolio audience.
             </p>
 
             <div className="space-y-4">
@@ -37,7 +37,7 @@ const NFTCertificates: React.FC = () => {
                 <div>
                   <h4 className="font-semibold text-foreground mb-1">Verifiable Credentials</h4>
                   <p className="text-muted-foreground text-sm">
-                    Each certificate is minted as an NFT on the blockchain, providing immutable proof of your achievement.
+                    Each Pro certificate is designed to mint as an NFT, with a verification link stored in the backend.
                   </p>
                 </div>
               </div>
@@ -49,7 +49,7 @@ const NFTCertificates: React.FC = () => {
                 <div>
                   <h4 className="font-semibold text-foreground mb-1">Tamper-Proof</h4>
                   <p className="text-muted-foreground text-sm">
-                    Your credentials cannot be forged or altered, ensuring authenticity for employers.
+                    Certificate metadata and transaction details make achievements easier to verify.
                   </p>
                 </div>
               </div>
@@ -61,7 +61,7 @@ const NFTCertificates: React.FC = () => {
                 <div>
                   <h4 className="font-semibold text-foreground mb-1">Easy Sharing</h4>
                   <p className="text-muted-foreground text-sm">
-                    Share your NFT certificates on LinkedIn, your portfolio, or directly with potential employers.
+                    Share your certificate verification page on LinkedIn, your portfolio, or directly with employers.
                   </p>
                 </div>
               </div>
@@ -93,8 +93,8 @@ const NFTCertificates: React.FC = () => {
               </div>
               
               <div className="bg-secondary/50 rounded-xl p-4 text-center mb-6">
-                <p className="text-lg font-bold text-foreground">Solidity Smart Contracts</p>
-                <p className="text-sm text-muted-foreground">Advanced Level Course</p>
+                <p className="text-lg font-bold text-foreground">Celo USDT Payments</p>
+                <p className="text-sm text-muted-foreground">Pro Build Project</p>
               </div>
               
               <div className="flex items-center justify-between text-sm text-muted-foreground">
@@ -114,9 +114,6 @@ const NFTCertificates: React.FC = () => {
               </div>
             </div>
             
-            {/* Decorative Elements */}
-            <div className="absolute -top-4 -right-4 w-20 h-20 bg-primary/10 rounded-full blur-2xl" />
-            <div className="absolute -bottom-4 -left-4 w-32 h-32 bg-accent/10 rounded-full blur-3xl" />
           </motion.div>
         </div>
       </div>

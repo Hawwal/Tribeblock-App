@@ -1,55 +1,77 @@
-import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
-  Star, Clock, Users, CheckCircle, Play, Lock, Award, 
+  Star, Clock, Users, CheckCircle, Lock, Award, 
   BookOpen, Code, FileText, ChevronDown, ChevronUp,
-  ArrowLeft
+  ArrowLeft, ClipboardCheck
 } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import SignUpModal from '@/components/SignUpModal';
 import { getCourseBySlug, type Course } from '@/lib/courseData';
+import { loadCourseWithFallback, type ApiCourse } from '@/lib/api';
+import { enrollInCourse, fetchCourseAccess, getSession, type CourseAccessReport } from '@/lib/auth';
 
-const generateCurriculum = (course: Course) => [
+type CurriculumLesson = {
+  title: string;
+  duration: string;
+  type: string;
+  completed: boolean;
+  preview?: boolean;
+};
+
+type CurriculumModule = {
+  title: string;
+  lessons: CurriculumLesson[];
+};
+
+const fallbackCurriculum = (course: Course): CurriculumModule[] => [
   {
     title: `Module 1: ${course.title} Basics`,
     lessons: [
-      { title: 'Introduction', duration: '15 min', type: 'video', completed: true, preview: true },
-      { title: 'Getting Started', duration: '12 min', type: 'video', completed: true },
-      { title: 'Core Concepts', duration: '20 min', type: 'video', completed: false },
-      { title: 'Hands-on Practice', duration: '25 min', type: 'code', completed: false },
+      { title: 'Lesson Brief', duration: '15 min', type: 'reading', completed: true, preview: true },
+      { title: 'Getting Started', duration: '12 min', type: 'interactive', completed: true },
+      { title: 'Core Concepts', duration: '20 min', type: 'reading', completed: false },
+      { title: 'IDE Practice', duration: '25 min', type: 'code', completed: false },
       { title: 'Module Quiz', duration: '10 min', type: 'quiz', completed: false },
     ],
   },
   {
-    title: 'Module 2: Intermediate Concepts',
+    title: 'Module 2: Build and Assessment',
     lessons: [
-      { title: 'Advanced Features', duration: '18 min', type: 'video', completed: false },
-      { title: 'Best Practices', duration: '15 min', type: 'video', completed: false },
       { title: 'Coding Exercise', duration: '30 min', type: 'code', completed: false },
-      { title: 'Project 1', duration: '45 min', type: 'project', completed: false },
-    ],
-  },
-  {
-    title: 'Module 3: Advanced Topics',
-    lessons: [
-      { title: 'Deep Dive', duration: '22 min', type: 'video', completed: false },
-      { title: 'Performance', duration: '18 min', type: 'video', completed: false },
-      { title: 'Security', duration: '20 min', type: 'video', completed: false },
-      { title: 'Advanced Practice', duration: '35 min', type: 'code', completed: false },
-    ],
-  },
-  {
-    title: 'Module 4: Real-World Projects',
-    lessons: [
-      { title: 'Project Planning', duration: '15 min', type: 'video', completed: false },
-      { title: 'Final Project', duration: '60 min', type: 'project', completed: false },
-      { title: 'Course Summary', duration: '10 min', type: 'video', completed: false },
+      { title: 'Guided Build Project', duration: '45 min', type: 'project', completed: false },
       { title: 'Final Assessment', duration: '30 min', type: 'quiz', completed: false },
     ],
   },
 ];
+
+const generateCurriculum = (course: ApiCourse): CurriculumModule[] => {
+  if (!course.modules?.length) {
+    return fallbackCurriculum(course);
+  }
+
+  return course.modules.map((module) => ({
+    title: module.title,
+    lessons: [
+      ...module.lessons.map((lesson, lessonIndex) => ({
+        title: lesson.title,
+        duration: `${lesson.estimatedMinutes} min`,
+        type: lesson.exercises.length > 0 ? 'code' : lesson.quizzes.length > 0 ? 'quiz' : 'reading',
+        completed: lessonIndex < 1,
+        preview: lesson.visibility === 'FREE',
+      })),
+      ...module.projects.map((project) => ({
+        title: project.title,
+        duration: '60 min',
+        type: 'project',
+        completed: false,
+        preview: project.visibility === 'FREE',
+      })),
+    ],
+  }));
+};
 
 const getStarPercentage = (stars: number): number => {
   if (stars === 5) return 70;
@@ -61,13 +83,63 @@ const getStarPercentage = (stars: number): number => {
 
 const CourseDetail: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
   const [isSignUpOpen, setIsSignUpOpen] = useState(false);
+  const [enrollmentError, setEnrollmentError] = useState('');
+  const [isEnrolling, setIsEnrolling] = useState(false);
+  const [accessReport, setAccessReport] = useState<CourseAccessReport | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'curriculum' | 'reviews' | 'instructor'>('overview');
   const [expandedModules, setExpandedModules] = useState<number[]>([0]);
+  const [course, setCourse] = useState<ApiCourse | undefined>(() => getCourseBySlug(slug || ''));
+  const [isLoadingCourse, setIsLoadingCourse] = useState(true);
 
-  const course = getCourseBySlug(slug || '');
+  useEffect(() => {
+    let isMounted = true;
 
-  if (!course) {
+    if (!slug) {
+      setIsLoadingCourse(false);
+      return undefined;
+    }
+
+    loadCourseWithFallback(slug)
+      .then((loadedCourse) => {
+        if (isMounted) {
+          setCourse(loadedCourse);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingCourse(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [slug]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!course || !getSession()) {
+      setAccessReport(null);
+      return undefined;
+    }
+
+    fetchCourseAccess(course.id)
+      .then((report) => {
+        if (isMounted) setAccessReport(report);
+      })
+      .catch(() => {
+        if (isMounted) setAccessReport(null);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [course?.id]);
+
+  if (!course && !isLoadingCourse) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
@@ -76,6 +148,14 @@ const CourseDetail: React.FC = () => {
             Back to courses
           </Link>
         </div>
+      </div>
+    );
+  }
+
+  if (!course) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted-foreground">Loading course from backend...</p>
       </div>
     );
   }
@@ -95,11 +175,37 @@ const CourseDetail: React.FC = () => {
 
   const getLessonIcon = (type: string) => {
     switch (type) {
-      case 'video': return <Play size={14} />;
+      case 'reading': return <BookOpen size={14} />;
+      case 'interactive': return <ClipboardCheck size={14} />;
       case 'code': return <Code size={14} />;
       case 'quiz': return <FileText size={14} />;
       case 'project': return <BookOpen size={14} />;
-      default: return <Play size={14} />;
+      default: return <BookOpen size={14} />;
+    }
+  };
+
+  const handleStartLearning = async () => {
+    setEnrollmentError('');
+
+    if (!getSession()) {
+      setIsSignUpOpen(true);
+      return;
+    }
+
+    if (accessReport && !accessReport.course.allowed) {
+      setEnrollmentError(`This course requires ${accessReport.course.requiredTier}. Choose a plan to continue.`);
+      return;
+    }
+
+    setIsEnrolling(true);
+
+    try {
+      await enrollInCourse(course.id);
+      navigate(`/learn/${course.slug}`);
+    } catch (error) {
+      setEnrollmentError(error instanceof Error ? error.message : 'Unable to enroll in this course.');
+    } finally {
+      setIsEnrolling(false);
     }
   };
 
@@ -152,18 +258,22 @@ const CourseDetail: React.FC = () => {
 
               <div className="mt-4 text-sm text-muted-foreground">
                 Created by <span className="text-primary font-medium">{course.instructor}</span>
+                {isLoadingCourse && <span className="ml-2">Syncing backend data...</span>}
               </div>
             </div>
 
             <div className="lg:row-span-2">
               <div className="bg-card rounded-2xl border border-border p-6 shadow-card sticky top-24">
-                <div className="relative h-40 bg-gradient-to-br from-primary/20 to-accent/20 rounded-xl mb-6 flex items-center justify-center">
-                  <button className="w-16 h-16 rounded-full bg-primary flex items-center justify-center">
-                    <Play size={24} className="text-primary-foreground ml-1" />
-                  </button>
-                  <span className="absolute bottom-3 left-3 text-xs bg-black/70 text-white px-2 py-1 rounded">
-                    Preview
-                  </span>
+                <div className="relative min-h-40 bg-gradient-to-br from-primary/15 to-accent/15 rounded-xl mb-6 p-5 flex flex-col justify-between">
+                  <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                    <BookOpen size={24} />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-foreground">Text-first interactive course</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Learn by reading, practicing in the IDE, taking quizzes, and building projects.
+                    </p>
+                  </div>
                 </div>
 
                 {progressPercent > 0 && (
@@ -182,25 +292,36 @@ const CourseDetail: React.FC = () => {
                 )}
 
                 <button
-                  onClick={() => setIsSignUpOpen(true)}
+                  onClick={handleStartLearning}
+                  disabled={isEnrolling}
                   className="btn-primary w-full py-3 text-base mb-4"
                 >
-                  {progressPercent > 0 ? 'Continue Learning' : 'Enroll Now - Start Free'}
+                  {isEnrolling ? 'Opening course...' : progressPercent > 0 ? 'Continue Learning' : 'Enroll Now - Start Free'}
                 </button>
 
+                {enrollmentError && (
+                  <p className="text-sm text-destructive text-center mb-4">{enrollmentError}</p>
+                )}
+
+                {accessReport && !accessReport.course.allowed && (
+                  <Link to="/#pricing" className="payment-cta w-full justify-center mb-4">
+                    Upgrade to {accessReport.course.requiredTier}
+                  </Link>
+                )}
+
                 <p className="text-center text-muted-foreground text-sm mb-6">
-                  Free access to first lesson
+                  Free foundation lessons include IDE practice, quizzes, exams, and badges. Guided projects require Plus or Pro. NFT certificates require Pro.
                 </p>
 
                 <div className="space-y-3">
                   <h4 className="font-semibold text-foreground">This course includes:</h4>
                   <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                    <Play size={16} className="text-primary" />
-                    <span>{course.lessons} video lessons</span>
+                    <BookOpen size={16} className="text-primary" />
+                    <span>{course.lessons} text and interactive lessons</span>
                   </div>
                   <div className="flex items-center gap-3 text-sm text-muted-foreground">
                     <Code size={16} className="text-primary" />
-                    <span>Interactive coding exercises</span>
+                    <span>In-app IDE practice exercises</span>
                   </div>
                   <div className="flex items-center gap-3 text-sm text-muted-foreground">
                     <BookOpen size={16} className="text-primary" />
@@ -212,7 +333,7 @@ const CourseDetail: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-3 text-sm text-muted-foreground">
                     <Award size={16} className="text-primary" />
-                    <span>NFT Certificate</span>
+                    <span>Pro NFT certificate</span>
                   </div>
                 </div>
               </div>
@@ -270,11 +391,11 @@ const CourseDetail: React.FC = () => {
                 <div className="prose prose-neutral max-w-none">
                   <p className="text-muted-foreground mb-4">
                     {course.description} This comprehensive course is designed to take you from beginner to proficient, 
-                    with hands-on projects and real-world examples throughout.
+                    with guided reading, interactive checkpoints, coding exercises, and real-world examples throughout.
                   </p>
                   <p className="text-muted-foreground mb-4">
-                    You'll learn through a combination of video lessons, interactive coding exercises, 
-                    and practical projects that reinforce your understanding. Each module builds upon the previous one, 
+                    You'll learn through text lessons, interactive coding exercises, quizzes, 
+                    cheatsheets, and practical projects that reinforce your understanding. Each module builds upon the previous one, 
                     ensuring a smooth learning progression.
                   </p>
                   <p className="text-muted-foreground">
