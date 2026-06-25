@@ -2,7 +2,7 @@ databases:
   - name: tribeblock-university-db
     databaseName: tribeblock_university
     user: tribeblock
-    plan: starter
+    plan: free
 
 services:
   - type: web
