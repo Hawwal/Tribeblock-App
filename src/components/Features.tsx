@@ -44,12 +44,12 @@ const Features: React.FC = () => {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
-          className="text-center mb-12 md:mb-16"
+          className="text-center mb-10 md:mb-16"
         >
-          <h2 className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-foreground mb-4">
+          <h2 className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-foreground mb-4 leading-tight">
             Why Choose Tribe Block?
           </h2>
-          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+          <p className="text-muted-foreground text-base md:text-lg max-w-2xl mx-auto leading-relaxed">
             A staged learning platform for programming first, with design, blockchain, business, AI, and cybersecurity ready to follow
           </p>
         </motion.div>
@@ -62,15 +62,15 @@ const Features: React.FC = () => {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: index * 0.1 }}
-              className="card-hover bg-card rounded-2xl p-6 md:p-8 border border-border"
+              className="card-hover bg-card rounded-lg p-5 md:p-8 border border-border"
             >
               <div className="feature-icon mb-4">
                 <feature.icon size={24} />
               </div>
-              <h3 className="text-xl font-bold text-foreground mb-2">
+              <h3 className="text-lg md:text-xl font-bold text-foreground mb-2 leading-snug">
                 {feature.title}
               </h3>
-              <p className="text-muted-foreground">
+              <p className="text-sm md:text-base text-muted-foreground leading-relaxed">
                 {feature.description}
               </p>
             </motion.div>

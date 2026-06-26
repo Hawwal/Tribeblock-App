@@ -16,6 +16,7 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
   const [session, setSession] = useState<AuthSession | null>(() => getSession());
   const [wallet, setWallet] = useState<ConnectedWallet | null>(() => getConnectedWallet());
   const [walletError, setWalletError] = useState('');
+  const [isAccountOpen, setIsAccountOpen] = useState(false);
 
   const navLinks = [
     { name: 'Home', href: '/' },
@@ -58,6 +59,7 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
     clearSession();
     setSession(null);
     setIsMenuOpen(false);
+    setIsAccountOpen(false);
   };
 
   const handleConnectWallet = async () => {
@@ -86,7 +88,7 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
           </Link>
 
           {/* Desktop Navigation */}
-          <nav className="hidden lg:flex items-center gap-8">
+          <nav className="hidden lg:flex items-center gap-5 xl:gap-7">
             {navLinks.map((link) => (
               <div key={link.name} className="relative">
                 {link.hasDropdown ? (
@@ -145,32 +147,60 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
           </nav>
 
           {/* Desktop CTA */}
-          <div className="hidden lg:flex items-center gap-4">
+          <div className="hidden lg:flex items-center gap-2">
             {session ? (
               <>
                 {canOpenAdmin && (
                   <Link
                     to="/admin"
-                    className="flex items-center gap-2 text-foreground/80 hover:text-foreground transition-colors font-medium"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-md text-foreground/80 hover:bg-secondary hover:text-foreground transition-colors"
+                    title="Admin"
+                    aria-label="Admin"
                   >
                     <ShieldCheck size={18} className="text-primary" />
-                    Admin
                   </Link>
                 )}
-                <Link
-                  to="/dashboard"
-                  className="flex items-center gap-2 text-foreground/80 hover:text-foreground transition-colors font-medium"
-                >
-                  <UserCircle size={18} className="text-primary" />
-                  <span className="max-w-32 truncate">{session.user.displayName}</span>
-                </Link>
-                <button
-                  onClick={handleSignOut}
-                  className="flex items-center gap-2 text-foreground/70 hover:text-foreground transition-colors font-medium"
-                >
-                  <LogOut size={16} />
-                  Sign Out
-                </button>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsAccountOpen((value) => !value)}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-md text-foreground/80 hover:bg-secondary hover:text-foreground transition-colors"
+                    title={session.user.displayName}
+                    aria-label="Account"
+                  >
+                    <UserCircle size={20} className="text-primary" />
+                  </button>
+                  <AnimatePresence>
+                    {isAccountOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 8 }}
+                        className="absolute right-0 top-full mt-2 w-64 rounded-lg border border-border bg-card p-3 shadow-card"
+                      >
+                        <p className="truncate font-semibold text-foreground">{session.user.displayName}</p>
+                        <p className="truncate text-xs text-muted-foreground">{session.user.email}</p>
+                        {wallet && <p className="mt-2 text-xs text-muted-foreground">Wallet: {formatWalletAddress(wallet.address)}</p>}
+                        <div className="mt-3 grid gap-2">
+                          <Link
+                            to="/dashboard"
+                            onClick={() => setIsAccountOpen(false)}
+                            className="rounded-md bg-secondary px-3 py-2 text-sm font-semibold text-foreground hover:bg-primary/10"
+                          >
+                            Dashboard
+                          </Link>
+                          <button
+                            onClick={handleSignOut}
+                            className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-semibold text-foreground hover:border-primary"
+                          >
+                            <LogOut size={16} />
+                            Sign Out
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </>
             ) : (
               <button
@@ -182,7 +212,8 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
             )}
             <button type="button" onClick={handleConnectWallet} className="payment-cta gap-2">
               <Wallet size={16} />
-              {wallet ? formatWalletAddress(wallet.address) : 'Connect Wallet'}
+              <span className="hidden xl:inline">{wallet ? formatWalletAddress(wallet.address) : 'Connect Wallet'}</span>
+              <span className="xl:hidden">{wallet ? 'Wallet' : 'Connect'}</span>
             </button>
           </div>
 

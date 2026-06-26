@@ -274,7 +274,7 @@
   
   /* Section Spacing */
   .section-padding {
-    padding: 5rem 1.5rem;
+    padding: 3.5rem 1.25rem;
   }
   
   @media (min-width: 768px) {
