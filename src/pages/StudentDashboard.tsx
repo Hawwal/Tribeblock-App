@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, Award, BadgeCheck, BookOpen, CreditCard, Globe2, UserCircle } from 'lucide-react';
+import { Activity, AlertCircle, Award, BadgeCheck, BookOpen, CreditCard, Globe2, RefreshCw, UserCircle } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import SignUpModal from '@/components/SignUpModal';
@@ -36,6 +36,8 @@ const StudentDashboard: React.FC = () => {
   const [wallet, setWallet] = useState<ConnectedWallet | null>(() => getConnectedWallet());
   const [isLoading, setIsLoading] = useState(Boolean(getSession()));
   const [message, setMessage] = useState('');
+  const [dataError, setDataError] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     const syncSession = () => {
@@ -64,14 +66,23 @@ const StudentDashboard: React.FC = () => {
     }
 
     setIsLoading(true);
+    setDataError('');
     Promise.allSettled([fetchCurrentUser(), fetchCurrentSubscription(), fetchMyProgress(), fetchMyCertificates()])
       .then(([profileResult, subscriptionResult, progressResult, certificatesResult]) => {
         if (!isMounted) return;
+
+        const failures = [profileResult, subscriptionResult, progressResult, certificatesResult].filter(
+          (result) => result.status === 'rejected',
+        );
 
         if (profileResult.status === 'fulfilled') setUser(profileResult.value);
         if (subscriptionResult.status === 'fulfilled') setSubscription(subscriptionResult.value);
         if (progressResult.status === 'fulfilled') setProgress(progressResult.value);
         if (certificatesResult.status === 'fulfilled') setCertificates(certificatesResult.value);
+
+        if (failures.length > 0) {
+          setDataError('Some dashboard data could not be refreshed from the backend. Your saved session is still loaded locally.');
+        }
       })
       .finally(() => {
         if (isMounted) setIsLoading(false);
@@ -80,7 +91,7 @@ const StudentDashboard: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [user?.id]);
+  }, [user?.id, refreshKey]);
 
   const stats = useMemo(() => {
     const activeCourses = progress.filter((item) => item.status !== 'COMPLETED').length;
@@ -175,6 +186,23 @@ const StudentDashboard: React.FC = () => {
               {message && (
                 <div className="rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-foreground">
                   {message}
+                </div>
+              )}
+
+              {dataError && (
+                <div className="flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 md:flex-row md:items-center md:justify-between">
+                  <span className="inline-flex items-start gap-2">
+                    <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
+                    {dataError}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setRefreshKey((value) => value + 1)}
+                    className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-300 px-3 py-2 font-semibold hover:bg-amber-100"
+                  >
+                    <RefreshCw size={15} />
+                    Retry
+                  </button>
                 </div>
               )}
 

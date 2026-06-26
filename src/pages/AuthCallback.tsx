@@ -5,6 +5,7 @@ import { saveSession, type AuthSession } from '@/lib/auth';
 
 const AuthCallback: React.FC = () => {
   const [searchParams] = useSearchParams();
+  const redirectPath = React.useMemo(() => safeRedirectPath(searchParams.get('redirect')), [searchParams]);
   const [error, setError] = useState(searchParams.get('error') ?? '');
 
   useEffect(() => {
@@ -21,12 +22,12 @@ const AuthCallback: React.FC = () => {
       const session = JSON.parse(window.atob(padded)) as AuthSession;
       saveSession(session);
       window.setTimeout(() => {
-        window.location.replace('/dashboard');
+        window.location.replace(new URL(redirectPath, window.location.origin).toString());
       }, 50);
     } catch {
       setError('The returned auth session could not be read.');
     }
-  }, []);
+  }, [redirectPath]);
 
   return (
     <main className="min-h-screen bg-background flex items-center justify-center px-4">
@@ -51,5 +52,16 @@ const AuthCallback: React.FC = () => {
     </main>
   );
 };
+
+function safeRedirectPath(value: string | null) {
+  if (!value) return '/dashboard';
+
+  try {
+    const decoded = decodeURIComponent(value);
+    return decoded.startsWith('/') && !decoded.startsWith('//') ? decoded : '/dashboard';
+  } catch {
+    return '/dashboard';
+  }
+}
 
 export default AuthCallback;

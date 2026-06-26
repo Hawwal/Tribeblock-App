@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Check, Copy, Sparkles, X } from 'lucide-react';
 import { fetchPlans, type ApiPlan } from '@/lib/api';
 import SignUpModal from '@/components/SignUpModal';
 import {
   confirmCeloTransaction,
+  fetchCurrentSubscription,
   getSession,
   previewSubscriptionCoupon,
   startSubscriptionCheckout,
@@ -260,8 +262,10 @@ const Pricing: React.FC = () => {
 
     try {
       const updatedPayment = await confirmCeloTransaction(paymentIntent.reference, transactionHash.trim());
+      const refreshedSubscription = updatedPayment.status === 'CONFIRMED' ? await fetchCurrentSubscription().catch(() => null) : null;
       setCheckoutResult({
         ...checkoutResult,
+        subscription: refreshedSubscription ?? checkoutResult.subscription,
         paymentIntent: updatedPayment,
       });
       setConfirmationMessage(
@@ -309,8 +313,10 @@ const Pricing: React.FC = () => {
       setTransactionHash(hash);
 
       const updatedPayment = await confirmCeloTransaction(paymentIntent.reference, hash);
+      const refreshedSubscription = updatedPayment.status === 'CONFIRMED' ? await fetchCurrentSubscription().catch(() => null) : null;
       setCheckoutResult({
         ...checkoutResult,
+        subscription: refreshedSubscription ?? checkoutResult.subscription,
         paymentIntent: updatedPayment,
       });
       setConfirmationMessage(
@@ -593,8 +599,13 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </div>
 
         {!payment ? (
-          <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-700">
-            Your free Basic subscription is active. You can start learning from the course catalog.
+          <div className="space-y-4">
+            <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-700">
+              Your free Basic subscription is active. You can start learning from the course catalog.
+            </div>
+            <Link to="/dashboard" onClick={onClose} className="btn-primary inline-flex w-full justify-center py-3">
+              View Subscription on Dashboard
+            </Link>
           </div>
         ) : payment.provider === 'CELO_USDT' ? (
           <CeloInstructions
@@ -702,6 +713,12 @@ const CeloInstructions: React.FC<
     </button>
 
     {confirmationMessage && <p className="text-sm text-primary font-medium">{confirmationMessage}</p>}
+
+    {payment.status === 'CONFIRMED' && (
+      <Link to="/dashboard" className="btn-primary inline-flex w-full justify-center py-3">
+        View Subscription on Dashboard
+      </Link>
+    )}
   </div>
 );
 
