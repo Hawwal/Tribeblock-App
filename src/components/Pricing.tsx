@@ -6,7 +6,9 @@ import SignUpModal from '@/components/SignUpModal';
 import {
   confirmCeloTransaction,
   getSession,
+  previewSubscriptionCoupon,
   startSubscriptionCheckout,
+  type CouponPreview,
   type CheckoutResponse,
   type PaymentIntent,
 } from '@/lib/auth';
@@ -110,6 +112,11 @@ const Pricing: React.FC = () => {
   const [confirmationMessage, setConfirmationMessage] = useState('');
   const [wallet, setWallet] = useState<ConnectedWallet | null>(() => getConnectedWallet());
   const [isWalletPaymentPending, setIsWalletPaymentPending] = useState(false);
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCouponCode, setAppliedCouponCode] = useState('');
+  const [couponPreviews, setCouponPreviews] = useState<Record<string, CouponPreview>>({});
+  const [couponMessage, setCouponMessage] = useState('');
+  const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -175,6 +182,7 @@ const Pricing: React.FC = () => {
         planId: plan.id,
         interval: billingInterval,
         currency,
+        couponCode: couponPreviews[plan.id]?.code,
       });
       setCheckoutResult(result);
       setTransactionHash('');
@@ -183,6 +191,66 @@ const Pricing: React.FC = () => {
     } finally {
       setIsCheckingOut('');
     }
+  };
+
+  const handleApplyCoupon = async () => {
+    const code = couponCode.trim().toUpperCase();
+
+    setCouponMessage('');
+    setCheckoutError('');
+
+    if (!code) {
+      setCouponMessage('Enter a coupon code first.');
+      return;
+    }
+
+    const eligiblePlans = plans.filter((plan) => plan.id && plan.tier !== 'BASIC');
+
+    if (!eligiblePlans.length) {
+      setCouponMessage('Paid plans are still loading. Try again in a moment.');
+      return;
+    }
+
+    setIsApplyingCoupon(true);
+
+    try {
+      const previews = await Promise.allSettled(
+        eligiblePlans.map(async (plan) => {
+          const preview = await previewSubscriptionCoupon({
+            planId: plan.id!,
+            interval: billingInterval,
+            couponCode: code,
+          });
+          return [plan.id!, preview] as const;
+        }),
+      );
+      const nextPreviews = previews.reduce<Record<string, CouponPreview>>((result, item) => {
+        if (item.status === 'fulfilled') {
+          result[item.value[0]] = item.value[1];
+        }
+        return result;
+      }, {});
+
+      if (!Object.keys(nextPreviews).length) {
+        setCouponPreviews({});
+        setAppliedCouponCode('');
+        setCouponMessage('Coupon is not valid for the current paid plans.');
+        return;
+      }
+
+      setCouponPreviews(nextPreviews);
+      setAppliedCouponCode(code);
+      setCouponMessage(`Coupon ${code} applied.`);
+    } finally {
+      setIsApplyingCoupon(false);
+    }
+  };
+
+  const handleClearCoupon = () => {
+    setCouponCode('');
+    setAppliedCouponCode('');
+    setCouponPreviews({});
+    setCouponMessage('');
   };
 
   const handleConfirmCelo = async () => {
@@ -314,6 +382,34 @@ const Pricing: React.FC = () => {
           </div>
         </div>
 
+        <div className="max-w-5xl mx-auto mb-8 rounded-lg border border-border bg-card p-4 md:p-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <label className="block text-sm font-semibold text-foreground mb-2">Coupon code</label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  value={couponCode}
+                  onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
+                  placeholder="Enter coupon"
+                  className="min-w-0 rounded-lg border border-border bg-background px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                />
+                <button onClick={handleApplyCoupon} disabled={isApplyingCoupon} className="btn-primary px-5 py-3 disabled:opacity-50">
+                  {isApplyingCoupon ? 'Applying...' : 'Apply Coupon'}
+                </button>
+                {appliedCouponCode && (
+                  <button onClick={handleClearCoupon} className="rounded-lg border border-border px-5 py-3 font-semibold text-foreground hover:border-primary">
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Coupons slash the eligible Plus or Pro subscription price before checkout.
+            </p>
+          </div>
+          {couponMessage && <p className="mt-3 text-sm font-medium text-primary">{couponMessage}</p>}
+        </div>
+
         {checkoutError && (
           <div className="max-w-5xl mx-auto mb-6 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {checkoutError}
@@ -321,7 +417,10 @@ const Pricing: React.FC = () => {
         )}
 
         <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-          {plans.map((plan, index) => (
+          {plans.map((plan, index) => {
+            const couponPreview = plan.id ? couponPreviews[plan.id] : undefined;
+
+            return (
             <motion.div
               key={plan.name}
               initial={{ opacity: 0, y: 20 }}
@@ -343,13 +442,23 @@ const Pricing: React.FC = () => {
                 <h3 className="text-xl font-bold text-foreground mb-2">{plan.name}</h3>
                 <p className="text-muted-foreground text-sm mb-4">{plan.description}</p>
                 <div className="flex items-baseline justify-center gap-1">
+                  {couponPreview ? (
+                    <span className="text-lg text-muted-foreground line-through">
+                      {billingInterval === 'YEARLY' ? plan.yearlyPrice : plan.monthlyPrice}
+                    </span>
+                  ) : null}
                   <span className="text-4xl font-extrabold text-foreground">
-                    {billingInterval === 'YEARLY' ? plan.yearlyPrice : plan.monthlyPrice}
+                    {couponPreview ? `$${Number(couponPreview.discountedAmount).toFixed(0)}` : billingInterval === 'YEARLY' ? plan.yearlyPrice : plan.monthlyPrice}
                   </span>
                   <span className="text-muted-foreground">
                     /{plan.tier === 'BASIC' ? plan.period : billingInterval === 'YEARLY' ? 'year' : 'month'}
                   </span>
                 </div>
+                {couponPreview && (
+                  <p className="text-xs text-primary font-semibold mt-2">
+                    {couponPreview.discountPercent}% off with {couponPreview.code}
+                  </p>
+                )}
                 {plan.tier !== 'BASIC' && billingInterval === 'YEARLY' && (
                   <p className="text-xs text-primary font-semibold mt-2">Includes two months free</p>
                 )}
@@ -376,7 +485,8 @@ const Pricing: React.FC = () => {
                 {isCheckingOut === plan.name ? 'Starting checkout...' : plan.cta}
               </button>
             </motion.div>
-          ))}
+            );
+          })}
         </div>
 
         {/* FAQ Teaser */}

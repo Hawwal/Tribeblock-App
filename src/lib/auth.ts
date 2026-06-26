@@ -78,6 +78,10 @@ export type PaymentIntent = {
     treasuryAddress?: string;
     contractMethod?: string;
     usdAmount?: string;
+    couponCode?: string;
+    discountPercent?: number;
+    originalAmountUsd?: string;
+    discountedAmountUsd?: string;
     estimatedExchangeRate?: number;
     provider?: string;
   } | null;
@@ -159,9 +163,103 @@ export type AdminOverview = {
   recentPayments: AdminPayment[];
 };
 
+export type AdminCoupon = {
+  id: string;
+  code: string;
+  description?: string | null;
+  discountPercent: number;
+  appliesToTiers: Array<'BASIC' | 'PLUS' | 'PRO'>;
+  isActive: boolean;
+  startsAt?: string | null;
+  expiresAt?: string | null;
+  maxRedemptions?: number | null;
+  redemptionCount: number;
+  createdAt: string;
+};
+
+export type CouponPreview = {
+  code: string;
+  discountPercent: number;
+  originalAmount: string;
+  discountedAmount: string;
+  savingsAmount: string;
+};
+
+export type AdminAuthoringCourse = AdminCourseReviewItem & {
+  modules: Array<{
+    id: string;
+    title: string;
+    summary: string;
+    sortOrder: number;
+    lessons: Array<{
+      id: string;
+      slug: string;
+      title: string;
+      summary: string;
+      visibility: string;
+      sortOrder: number;
+      exercises: Array<{
+        id: string;
+        slug: string;
+        title: string;
+        runtime: string;
+        visibility: string;
+        tests: Array<{
+          id: string;
+          name: string;
+          assertion: string;
+          isHidden: boolean;
+        }>;
+      }>;
+    }>;
+  }>;
+};
+
+export type CourseAuthoringInput = {
+  title: string;
+  subtitle: string;
+  description: string;
+  category: string;
+  level: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
+  visibility: 'FREE' | 'PREVIEW' | 'PLUS' | 'PRO';
+  isFreeBasic: boolean;
+  estimatedHours: number;
+  languageTags: string[];
+  skillTags: string[];
+};
+
+export type ModuleAuthoringInput = {
+  title: string;
+  summary: string;
+};
+
+export type LessonAuthoringInput = {
+  title: string;
+  summary: string;
+  bodyMarkdown: string;
+  visibility: 'FREE' | 'PREVIEW' | 'PLUS' | 'PRO';
+  estimatedMinutes: number;
+};
+
+export type ExerciseAuthoringInput = {
+  title: string;
+  instructions: string;
+  runtime: 'BROWSER_HTML_CSS_JS' | 'NODE' | 'TYPESCRIPT' | 'PYTHON' | 'JAVA' | 'CPP' | 'BASH' | 'SQL' | 'SOLIDITY';
+  starterFiles: Record<string, string>;
+  solutionFiles?: Record<string, string>;
+  visibility: 'FREE' | 'PREVIEW' | 'PLUS' | 'PRO';
+  tests: Array<{
+    name: string;
+    command?: string;
+    assertion: string;
+    isHidden?: boolean;
+  }>;
+};
+
 export type CheckoutResponse = {
   subscription: NonNullable<CurrentSubscription>;
   paymentIntent: PaymentIntent | null;
+  coupon?: CouponPreview | null;
 };
 
 export type EnrollmentSummary = {
@@ -347,6 +445,7 @@ export async function startSubscriptionCheckout(input: {
   planId: string;
   interval: 'MONTHLY' | 'YEARLY';
   currency: 'USD' | 'NGN' | 'KES' | 'GHS';
+  couponCode?: string;
 }) {
   const session = getSession();
 
@@ -357,6 +456,17 @@ export async function startSubscriptionCheckout(input: {
   return request<CheckoutResponse>('/api/subscriptions/checkout', {
     method: 'POST',
     headers: sessionHeaders(session),
+    body: JSON.stringify(input),
+  });
+}
+
+export async function previewSubscriptionCoupon(input: {
+  planId: string;
+  interval: 'MONTHLY' | 'YEARLY';
+  couponCode: string;
+}) {
+  return request<CouponPreview>('/api/subscriptions/coupons/preview', {
+    method: 'POST',
     body: JSON.stringify(input),
   });
 }
@@ -447,6 +557,81 @@ export async function reviewAdminContributorApplication(applicationId: string, s
     method: 'PATCH',
     headers: sessionHeaders(session),
     body: JSON.stringify({ status, adminNotes }),
+  });
+}
+
+export async function fetchAdminCoupons() {
+  const session = requireSession();
+
+  return request<AdminCoupon[]>('/api/admin/coupons', {
+    headers: sessionHeaders(session),
+  });
+}
+
+export async function createAdminCoupon(input: {
+  code: string;
+  description?: string;
+  discountPercent: number;
+  appliesToTiers: Array<'BASIC' | 'PLUS' | 'PRO'>;
+  isActive: boolean;
+  startsAt?: string;
+  expiresAt?: string;
+  maxRedemptions?: number;
+}) {
+  const session = requireSession();
+
+  return request<AdminCoupon>('/api/admin/coupons', {
+    method: 'POST',
+    headers: sessionHeaders(session),
+    body: JSON.stringify(input),
+  });
+}
+
+export async function fetchAdminAuthoringCourses() {
+  const session = requireSession();
+
+  return request<AdminAuthoringCourse[]>('/api/admin/authoring/courses', {
+    headers: sessionHeaders(session),
+  });
+}
+
+export async function createAdminCourse(input: CourseAuthoringInput) {
+  const session = requireSession();
+
+  return request<AdminAuthoringCourse>('/api/admin/authoring/courses', {
+    method: 'POST',
+    headers: sessionHeaders(session),
+    body: JSON.stringify(input),
+  });
+}
+
+export async function createAdminModule(courseId: string, input: ModuleAuthoringInput) {
+  const session = requireSession();
+
+  return request(`/api/admin/authoring/courses/${courseId}/modules`, {
+    method: 'POST',
+    headers: sessionHeaders(session),
+    body: JSON.stringify(input),
+  });
+}
+
+export async function createAdminLesson(moduleId: string, input: LessonAuthoringInput) {
+  const session = requireSession();
+
+  return request(`/api/admin/authoring/modules/${moduleId}/lessons`, {
+    method: 'POST',
+    headers: sessionHeaders(session),
+    body: JSON.stringify(input),
+  });
+}
+
+export async function createAdminExercise(lessonId: string, input: ExerciseAuthoringInput) {
+  const session = requireSession();
+
+  return request(`/api/admin/authoring/lessons/${lessonId}/exercises`, {
+    method: 'POST',
+    headers: sessionHeaders(session),
+    body: JSON.stringify(input),
   });
 }
 

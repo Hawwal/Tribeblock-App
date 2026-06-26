@@ -10,6 +10,7 @@ type CreateSubscriptionPaymentInput = {
   subscriptionId: string;
   amount: string;
   currency: Currency;
+  metadata?: Record<string, unknown>;
 };
 
 const erc20TransferAbi = [
@@ -159,6 +160,7 @@ export class PaymentsService {
         status: PaymentStatus.PENDING,
         expiresAt: this.expiresInMinutes(45),
         providerMetadata: {
+          ...input.metadata,
           amountUnits,
           rpcUrl: this.config.get<string>('CELO_RPC_URL'),
           paymentMode,
@@ -190,6 +192,7 @@ export class PaymentsService {
         status: PaymentStatus.PENDING,
         expiresAt: this.expiresInMinutes(60),
         providerMetadata: {
+          ...input.metadata,
           provider: this.config.get<string>('LOCAL_BANK_PROVIDER') ?? 'manual',
           usdAmount: input.amount,
           estimatedExchangeRate: rate,

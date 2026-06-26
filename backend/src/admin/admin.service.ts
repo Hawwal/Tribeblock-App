@@ -1,5 +1,14 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import { ContributorApplicationStatus, CourseStatus, PaymentStatus, UserRole } from '@prisma/client';
+import {
+  ContentVisibility,
+  ContributorApplicationStatus,
+  CourseLevel,
+  CourseStatus,
+  ExerciseRuntime,
+  PaymentStatus,
+  SubscriptionTier,
+  UserRole,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 type ReviewInput = {
@@ -10,6 +19,61 @@ type ReviewInput = {
 type ContributorReviewInput = {
   status: ContributorApplicationStatus;
   adminNotes?: string;
+};
+
+type CouponInput = {
+  code: string;
+  description?: string;
+  discountPercent: number;
+  appliesToTiers: SubscriptionTier[];
+  isActive?: boolean;
+  startsAt?: string;
+  expiresAt?: string;
+  maxRedemptions?: number;
+};
+
+type CourseAuthoringInput = {
+  title: string;
+  subtitle: string;
+  description: string;
+  category: string;
+  level: CourseLevel;
+  visibility: ContentVisibility;
+  isFreeBasic?: boolean;
+  estimatedHours: number;
+  languageTags: string[];
+  skillTags: string[];
+};
+
+type ModuleAuthoringInput = {
+  title: string;
+  summary: string;
+  sortOrder?: number;
+};
+
+type LessonAuthoringInput = {
+  title: string;
+  summary: string;
+  bodyMarkdown: string;
+  visibility: ContentVisibility;
+  estimatedMinutes: number;
+  sortOrder?: number;
+};
+
+type ExerciseAuthoringInput = {
+  title: string;
+  instructions: string;
+  runtime: ExerciseRuntime;
+  starterFiles: Record<string, string>;
+  solutionFiles?: Record<string, string>;
+  visibility: ContentVisibility;
+  sortOrder?: number;
+  tests?: Array<{
+    name: string;
+    command?: string;
+    assertion: string;
+    isHidden?: boolean;
+  }>;
 };
 
 @Injectable()
@@ -81,6 +145,130 @@ export class AdminService {
     });
   }
 
+  async listAuthoringCourses(userId: string) {
+    const user = await this.assertAuthor(userId);
+
+    return this.prisma.course.findMany({
+      where: user.role === UserRole.ADMIN ? { status: { not: CourseStatus.ARCHIVED } } : { authorId: userId },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        author: { select: { id: true, displayName: true, email: true, role: true } },
+        modules: {
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            lessons: {
+              orderBy: { sortOrder: 'asc' },
+              include: { exercises: { orderBy: { sortOrder: 'asc' }, include: { tests: { orderBy: { sortOrder: 'asc' } } } } },
+            },
+            projects: { orderBy: { sortOrder: 'asc' } },
+          },
+        },
+      },
+    });
+  }
+
+  async createCourse(authorId: string, input: CourseAuthoringInput) {
+    await this.assertAuthor(authorId);
+    const slug = await this.uniqueCourseSlug(input.title);
+
+    return this.prisma.course.create({
+      data: {
+        title: input.title,
+        slug,
+        subtitle: input.subtitle,
+        description: input.description,
+        category: input.category,
+        level: input.level,
+        visibility: input.visibility,
+        isFreeBasic: input.isFreeBasic ?? false,
+        hasProProject: true,
+        estimatedHours: input.estimatedHours,
+        languageTags: input.languageTags,
+        skillTags: input.skillTags,
+        authorId,
+        status: CourseStatus.UNDER_REVIEW,
+        sourceRepositoryUrl: 'https://github.com/Tribe-Block-University',
+        sourcePath: `${slug}/README.md`,
+        sourceProvider: 'admin-authoring',
+        sourceSyncEnabled: false,
+      },
+      include: { author: { select: { id: true, displayName: true, email: true, role: true } }, modules: true },
+    });
+  }
+
+  async createModule(userId: string, courseId: string, input: ModuleAuthoringInput) {
+    await this.assertCanEditCourse(userId, courseId);
+    const sortOrder = input.sortOrder ?? (await this.nextModuleSortOrder(courseId));
+
+    return this.prisma.courseModule.create({
+      data: {
+        courseId,
+        title: input.title,
+        summary: input.summary,
+        sortOrder,
+      },
+    });
+  }
+
+  async createLesson(userId: string, moduleId: string, input: LessonAuthoringInput) {
+    const module = await this.prisma.courseModule.findUniqueOrThrow({
+      where: { id: moduleId },
+      select: { courseId: true },
+    });
+    await this.assertCanEditCourse(userId, module.courseId);
+    const sortOrder = input.sortOrder ?? (await this.nextLessonSortOrder(moduleId));
+    const slug = await this.uniqueLessonSlug(moduleId, input.title);
+
+    return this.prisma.lesson.create({
+      data: {
+        moduleId,
+        slug,
+        title: input.title,
+        summary: input.summary,
+        bodyMarkdown: input.bodyMarkdown,
+        visibility: input.visibility,
+        estimatedMinutes: input.estimatedMinutes,
+        sortOrder,
+      },
+    });
+  }
+
+  async createExercise(userId: string, lessonId: string, input: ExerciseAuthoringInput) {
+    const lesson = await this.prisma.lesson.findUniqueOrThrow({
+      where: { id: lessonId },
+      select: { module: { select: { courseId: true } } },
+    });
+    await this.assertCanEditCourse(userId, lesson.module.courseId);
+    const sortOrder = input.sortOrder ?? (await this.nextExerciseSortOrder(lessonId));
+    const slug = await this.uniqueExerciseSlug(lessonId, input.title);
+
+    return this.prisma.codingExercise.create({
+      data: {
+        lessonId,
+        slug,
+        title: input.title,
+        instructions: input.instructions,
+        runtime: input.runtime,
+        starterFiles: input.starterFiles,
+        solutionFiles: input.solutionFiles,
+        visibility: input.visibility,
+        sortOrder,
+        tests: input.tests?.length
+          ? {
+              create: input.tests.map((test, index) => ({
+                name: test.name,
+                command: test.command,
+                assertion: test.assertion,
+                isHidden: test.isHidden ?? false,
+                sortOrder: index + 1,
+              })),
+            }
+          : undefined,
+      },
+      include: { tests: { orderBy: { sortOrder: 'asc' } } },
+    });
+  }
+
   async reviewCourse(reviewerId: string, courseId: string, input: ReviewInput) {
     if (input.status === CourseStatus.PUBLISHED) {
       await this.assertAdmin(reviewerId);
@@ -138,6 +326,35 @@ export class AdminService {
     });
   }
 
+  async listCoupons(userId: string) {
+    await this.assertAdmin(userId);
+
+    return this.prisma.coupon.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { createdBy: { select: { displayName: true, email: true } } },
+    });
+  }
+
+  async createCoupon(userId: string, input: CouponInput) {
+    await this.assertAdmin(userId);
+    const code = input.code.trim().toUpperCase();
+
+    return this.prisma.coupon.create({
+      data: {
+        code,
+        description: input.description,
+        discountPercent: input.discountPercent,
+        appliesToTiers: input.appliesToTiers,
+        isActive: input.isActive ?? true,
+        startsAt: input.startsAt ? new Date(input.startsAt) : undefined,
+        expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
+        maxRedemptions: input.maxRedemptions,
+        createdById: userId,
+      },
+      include: { createdBy: { select: { displayName: true, email: true } } },
+    });
+  }
+
   private toCountMap<T extends { _count: Record<string, number> }>(items: T[], key: keyof T & string) {
     return items.reduce<Record<string, number>>((counts, item) => {
       counts[String(item[key])] = item._count[key] ?? 0;
@@ -156,6 +373,35 @@ export class AdminService {
     }
   }
 
+  private async assertAuthor(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+
+    if (!user || (user.role !== UserRole.ADMIN && user.role !== UserRole.INSTRUCTOR)) {
+      throw new ForbiddenException('Admin or instructor access is required.');
+    }
+
+    return user;
+  }
+
+  private async assertCanEditCourse(userId: string, courseId: string) {
+    const user = await this.assertAuthor(userId);
+    const course = await this.prisma.course.findUniqueOrThrow({
+      where: { id: courseId },
+      select: { authorId: true, status: true },
+    });
+
+    if (course.status === CourseStatus.PUBLISHED && user.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Published courses can only be edited by admins.');
+    }
+
+    if (user.role !== UserRole.ADMIN && course.authorId !== userId) {
+      throw new ForbiddenException('You can only edit courses you authored.');
+    }
+  }
+
   private async assertAdmin(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -165,5 +411,53 @@ export class AdminService {
     if (!user || user.role !== UserRole.ADMIN) {
       throw new ForbiddenException('Only admins can publish courses.');
     }
+  }
+
+  private async uniqueCourseSlug(title: string) {
+    return this.uniqueSlug(title, async (slug) => Boolean(await this.prisma.course.findUnique({ where: { slug } })));
+  }
+
+  private async uniqueLessonSlug(moduleId: string, title: string) {
+    return this.uniqueSlug(title, async (slug) =>
+      Boolean(await this.prisma.lesson.findUnique({ where: { moduleId_slug: { moduleId, slug } } })),
+    );
+  }
+
+  private async uniqueExerciseSlug(lessonId: string, title: string) {
+    return this.uniqueSlug(title, async (slug) =>
+      Boolean(await this.prisma.codingExercise.findUnique({ where: { lessonId_slug: { lessonId, slug } } })),
+    );
+  }
+
+  private async uniqueSlug(title: string, exists: (slug: string) => Promise<boolean>) {
+    const root =
+      title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '') || 'untitled';
+    let slug = root;
+    let suffix = 1;
+
+    while (await exists(slug)) {
+      suffix += 1;
+      slug = `${root}-${suffix}`;
+    }
+
+    return slug;
+  }
+
+  private async nextModuleSortOrder(courseId: string) {
+    const result = await this.prisma.courseModule.aggregate({ where: { courseId }, _max: { sortOrder: true } });
+    return (result._max.sortOrder ?? 0) + 1;
+  }
+
+  private async nextLessonSortOrder(moduleId: string) {
+    const result = await this.prisma.lesson.aggregate({ where: { moduleId }, _max: { sortOrder: true } });
+    return (result._max.sortOrder ?? 0) + 1;
+  }
+
+  private async nextExerciseSortOrder(lessonId: string) {
+    const result = await this.prisma.codingExercise.aggregate({ where: { lessonId }, _max: { sortOrder: true } });
+    return (result._max.sortOrder ?? 0) + 1;
   }
 }

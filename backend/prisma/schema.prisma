@@ -174,6 +174,7 @@ model User {
   certificates      Certificate[]
   authoredCourses   Course[]             @relation("CourseAuthor")
   reviews           CourseReview[]       @relation("CourseReviewer")
+  createdCoupons    Coupon[]             @relation("CouponCreator")
 }
 
 model AuthCredential {
@@ -251,6 +252,25 @@ model PaymentIntent {
 
   @@index([userId, status])
   @@index([transactionHash])
+}
+
+model Coupon {
+  id              String             @id @default(cuid())
+  code            String             @unique
+  description     String?
+  discountPercent Int
+  appliesToTiers  SubscriptionTier[]
+  isActive        Boolean            @default(true)
+  startsAt        DateTime?
+  expiresAt       DateTime?
+  maxRedemptions  Int?
+  redemptionCount Int                @default(0)
+  createdById     String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  createdBy       User?              @relation("CouponCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([code, isActive])
 }
 
 model CareerPath {

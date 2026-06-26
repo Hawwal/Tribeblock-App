@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import { BillingInterval, Currency } from '@prisma/client';
-import { IsEnum, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { CurrentUser, RequestUser } from '../common/request-user';
 import { SubscriptionsService } from './subscriptions.service';
 
@@ -13,6 +13,21 @@ class CheckoutDto {
 
   @IsEnum(Currency)
   currency: Currency;
+
+  @IsString()
+  @IsOptional()
+  couponCode?: string;
+}
+
+class CouponPreviewDto {
+  @IsString()
+  planId: string;
+
+  @IsEnum(BillingInterval)
+  interval: BillingInterval;
+
+  @IsString()
+  couponCode: string;
 }
 
 @Controller('subscriptions')
@@ -32,5 +47,10 @@ export class SubscriptionsController {
   @Post('checkout')
   checkout(@CurrentUser() user: RequestUser, @Body() dto: CheckoutDto) {
     return this.subscriptionsService.startCheckout(user.id, dto);
+  }
+
+  @Post('coupons/preview')
+  previewCoupon(@Body() dto: CouponPreviewDto) {
+    return this.subscriptionsService.previewCoupon(dto);
   }
 }

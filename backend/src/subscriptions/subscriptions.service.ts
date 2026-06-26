@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { BillingInterval, Currency, SubscriptionStatus, SubscriptionTier } from '@prisma/client';
 import { PaymentsService } from '../payments/payments.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -7,6 +7,13 @@ type CheckoutInput = {
   planId: string;
   interval: BillingInterval;
   currency: Currency;
+  couponCode?: string;
+};
+
+type CouponPreviewInput = {
+  planId: string;
+  interval: BillingInterval;
+  couponCode: string;
 };
 
 @Injectable()
@@ -66,7 +73,9 @@ export class SubscriptionsService {
       throw new NotFoundException('Subscription plan not found.');
     }
 
-    const amountUsd = input.interval === BillingInterval.YEARLY ? plan.yearlyPriceUsd : plan.monthlyPriceUsd;
+    const originalAmountUsd = input.interval === BillingInterval.YEARLY ? plan.yearlyPriceUsd : plan.monthlyPriceUsd;
+    const coupon = input.couponCode ? await this.validateCoupon(input.couponCode, plan.tier) : null;
+    const amountUsd = this.discountAmount(originalAmountUsd.toString(), coupon?.discountPercent ?? 0);
     const now = new Date();
     const periodEnd = this.addBillingPeriod(now, input.interval);
 
@@ -87,6 +96,7 @@ export class SubscriptionsService {
       return {
         subscription,
         paymentIntent: null,
+        coupon: coupon ? this.couponSummary(coupon, originalAmountUsd.toString(), amountUsd) : null,
       };
     }
 
@@ -104,14 +114,44 @@ export class SubscriptionsService {
     const paymentIntent = await this.paymentsService.createSubscriptionPayment({
       userId,
       subscriptionId: subscription.id,
-      amount: amountUsd.toString(),
+      amount: amountUsd,
       currency: input.currency,
+      metadata: coupon
+        ? {
+            couponCode: coupon.code,
+            discountPercent: coupon.discountPercent,
+            originalAmountUsd: originalAmountUsd.toString(),
+            discountedAmountUsd: amountUsd,
+          }
+        : undefined,
     });
+
+    if (coupon) {
+      await this.prisma.coupon.update({
+        where: { id: coupon.id },
+        data: { redemptionCount: { increment: 1 } },
+      });
+    }
 
     return {
       subscription,
       paymentIntent,
+      coupon: coupon ? this.couponSummary(coupon, originalAmountUsd.toString(), amountUsd) : null,
     };
+  }
+
+  async previewCoupon(input: CouponPreviewInput) {
+    const plan = await this.prisma.subscriptionPlan.findUnique({ where: { id: input.planId } });
+
+    if (!plan) {
+      throw new NotFoundException('Subscription plan not found.');
+    }
+
+    const coupon = await this.validateCoupon(input.couponCode, plan.tier);
+    const originalAmount = input.interval === BillingInterval.YEARLY ? plan.yearlyPriceUsd : plan.monthlyPriceUsd;
+    const discountedAmount = this.discountAmount(originalAmount.toString(), coupon.discountPercent);
+
+    return this.couponSummary(coupon, originalAmount.toString(), discountedAmount);
   }
 
   private addBillingPeriod(date: Date, interval: BillingInterval) {
@@ -161,5 +201,54 @@ export class SubscriptionsService {
         create: plan,
       });
     }
+  }
+
+  private async validateCoupon(code: string, tier: SubscriptionTier) {
+    const normalizedCode = code.trim().toUpperCase();
+
+    if (!normalizedCode) {
+      throw new BadRequestException('Enter a coupon code.');
+    }
+
+    const coupon = await this.prisma.coupon.findUnique({ where: { code: normalizedCode } });
+    const now = new Date();
+
+    if (!coupon || !coupon.isActive) {
+      throw new NotFoundException('Coupon not found or inactive.');
+    }
+
+    if (coupon.startsAt && coupon.startsAt > now) {
+      throw new BadRequestException('Coupon is not active yet.');
+    }
+
+    if (coupon.expiresAt && coupon.expiresAt < now) {
+      throw new BadRequestException('Coupon has expired.');
+    }
+
+    if (coupon.maxRedemptions !== null && coupon.redemptionCount >= coupon.maxRedemptions) {
+      throw new BadRequestException('Coupon redemption limit has been reached.');
+    }
+
+    if (coupon.appliesToTiers.length > 0 && !coupon.appliesToTiers.includes(tier)) {
+      throw new BadRequestException(`Coupon does not apply to the ${tier.toLowerCase()} plan.`);
+    }
+
+    return coupon;
+  }
+
+  private discountAmount(amount: string, discountPercent: number) {
+    const value = Number(amount);
+    const discounted = Math.max(0, value * (1 - discountPercent / 100));
+    return discounted.toFixed(2);
+  }
+
+  private couponSummary(coupon: { code: string; discountPercent: number }, originalAmount: string, discountedAmount: string) {
+    return {
+      code: coupon.code,
+      discountPercent: coupon.discountPercent,
+      originalAmount,
+      discountedAmount,
+      savingsAmount: (Number(originalAmount) - Number(discountedAmount)).toFixed(2),
+    };
   }
 }
