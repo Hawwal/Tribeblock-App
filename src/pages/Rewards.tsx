@@ -3,8 +3,8 @@ import { Award, BadgeDollarSign, CheckCircle2, Github, RefreshCw, Wallet } from 
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import SignUpModal from '@/components/SignUpModal';
-import { fetchContributorRewards, type ContributorRewardsDashboard } from '@/lib/api';
-import { connectCeloWallet, formatWalletAddress, getConnectedWallet } from '@/lib/wallet';
+import { confirmContributorRewardClaim, fetchContributorRewards, type ContributorRewardsDashboard } from '@/lib/api';
+import { claimGoodDollarReward, connectCeloWallet, formatWalletAddress, getConnectedWallet } from '@/lib/wallet';
 
 const Rewards: React.FC = () => {
   const [isSignUpOpen, setIsSignUpOpen] = useState(false);
@@ -14,6 +14,7 @@ const Rewards: React.FC = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isConnectingWallet, setIsConnectingWallet] = useState(false);
+  const [claimingRewardId, setClaimingRewardId] = useState('');
 
   const loadDashboard = async (input = { githubUsername, walletAddress }) => {
     setError('');
@@ -44,6 +45,30 @@ const Rewards: React.FC = () => {
     }
   };
 
+  const handleClaimReward = async (rewardId: string) => {
+    const vaultAddress = dashboard?.goodDollar.vaultAddress;
+
+    if (!vaultAddress) {
+      setError('G$ rewards vault is not configured yet.');
+      return;
+    }
+
+    setError('');
+    setClaimingRewardId(rewardId);
+
+    try {
+      const connectedWallet = getConnectedWallet() ?? (await connectCeloWallet({ requireSignature: true }));
+      setWalletAddress(connectedWallet.address);
+      const transactionHash = await claimGoodDollarReward({ vaultAddress, rewardId });
+      await confirmContributorRewardClaim(rewardId, transactionHash);
+      await loadDashboard({ githubUsername, walletAddress: connectedWallet.address });
+    } catch (claimError) {
+      setError(claimError instanceof Error ? claimError.message : 'Unable to claim G$ reward.');
+    } finally {
+      setClaimingRewardId('');
+    }
+  };
+
   useEffect(() => {
     const wallet = getConnectedWallet();
     if (wallet) {
@@ -66,7 +91,7 @@ const Rewards: React.FC = () => {
                 Contributor Rewards Dashboard
               </h1>
               <p className="text-lg text-muted-foreground max-w-3xl">
-                Track GitHub contributions, approved rewards, and G$ payout status for accepted TribeBlock contributors.
+                Track GitHub contributions, approved rewards, and claimable G$ payouts for accepted TribeBlock contributors.
               </p>
             </div>
           </div>
@@ -103,7 +128,7 @@ const Rewards: React.FC = () => {
 
                   <button type="button" onClick={handleConnectWallet} disabled={isConnectingWallet} className="payment-cta w-full justify-center gap-2 disabled:opacity-60">
                     <Wallet size={16} />
-                    {isConnectingWallet ? 'Connecting wallet...' : walletAddress ? `Wallet ${formatWalletAddress(walletAddress)}` : 'Connect Wallet'}
+                    {isConnectingWallet ? 'Connecting wallet...' : walletAddress ? 'Wallet ' + formatWalletAddress(walletAddress) : 'Connect Wallet'}
                   </button>
                   <p className="text-xs text-muted-foreground">
                     MetaMask will ask you to connect and sign a gas-free message to prove wallet ownership. MiniPay may connect without message signing.
@@ -126,7 +151,7 @@ const Rewards: React.FC = () => {
                 <div className="grid sm:grid-cols-3 gap-4">
                   <Metric label="Approved contributions" value={dashboard?.totals.approvedContributions ?? 0} />
                   <Metric label="Pending review" value={dashboard?.totals.pendingContributions ?? 0} />
-                  <Metric label="Pending G$" value={`${dashboard?.totals.pendingRewardsGd ?? '0'} G$`} />
+                  <Metric label="Pending G$" value={(dashboard?.totals.pendingRewardsGd ?? '0') + ' G$'} />
                 </div>
 
                 <div className="rounded-lg border border-border bg-card p-6">
@@ -141,7 +166,7 @@ const Rewards: React.FC = () => {
                   {dashboard?.contributor ? (
                     <div className="grid sm:grid-cols-2 gap-4 text-sm">
                       <Info label="Name" value={dashboard.contributor.fullName} />
-                      <Info label="GitHub" value={`@${dashboard.contributor.githubUsername}`} />
+                      <Info label="GitHub" value={'@' + dashboard.contributor.githubUsername} />
                       <Info label="Wallet" value={dashboard.contributor.walletAddress} />
                       <Info label="Status" value={dashboard.contributor.status.replaceAll('_', ' ')} />
                     </div>
@@ -195,28 +220,44 @@ const Rewards: React.FC = () => {
                       <h2 className="text-xl font-bold text-foreground">G$ rewards</h2>
                       <p className="text-sm text-muted-foreground">
                         Token: {dashboard?.goodDollar.tokenSymbol ?? 'G$'} on chain {dashboard?.goodDollar.chainId ?? 42220}
+                        {dashboard?.goodDollar.vaultAddress ? ' - Vault ' + formatWalletAddress(dashboard.goodDollar.vaultAddress) : ' - Vault not configured'}
                       </p>
                     </div>
                     <BadgeDollarSign className="text-primary" size={24} />
                   </div>
 
                   <div className="space-y-3">
-                    {(dashboard?.rewards ?? []).map((reward) => (
-                      <div key={reward.id} className="flex items-center justify-between gap-4 rounded-lg border border-border bg-background p-4">
-                        <div>
-                          <p className="font-semibold text-foreground">{reward.amountGd} G$</p>
-                          <p className="text-sm text-muted-foreground">{formatWalletAddress(reward.walletAddress)}</p>
+                    {(dashboard?.rewards ?? []).map((reward) => {
+                      const canClaim = reward.status === 'READY' && Boolean(dashboard?.goodDollar.vaultAddress) && !reward.transactionHash;
+
+                      return (
+                        <div key={reward.id} className="flex flex-col gap-4 rounded-lg border border-border bg-background p-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="font-semibold text-foreground">{reward.amountGd} G$</p>
+                            <p className="text-sm text-muted-foreground">{formatWalletAddress(reward.walletAddress)}</p>
+                            <p className="mt-1 text-xs text-muted-foreground break-all">Reward ID: {reward.id}</p>
+                          </div>
+                          <div className="flex flex-col items-start gap-2 sm:items-end">
+                            <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                              {reward.status}
+                            </span>
+                            {reward.transactionHash && (
+                              <p className="text-xs text-muted-foreground">Tx {formatWalletAddress(reward.transactionHash)}</p>
+                            )}
+                            {canClaim && (
+                              <button
+                                type="button"
+                                onClick={() => handleClaimReward(reward.id)}
+                                disabled={claimingRewardId === reward.id}
+                                className="btn-primary px-4 py-2 text-sm disabled:opacity-60"
+                              >
+                                {claimingRewardId === reward.id ? 'Claiming...' : 'Claim G$'}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                            {reward.status}
-                          </span>
-                          {reward.transactionHash && (
-                            <p className="mt-2 text-xs text-muted-foreground">{formatWalletAddress(reward.transactionHash)}</p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     {!dashboard?.rewards.length && (
                       <p className="text-sm text-muted-foreground">No G$ rewards are ready yet.</p>
@@ -228,7 +269,7 @@ const Rewards: React.FC = () => {
                   <div className="flex gap-3">
                     <CheckCircle2 className="text-primary flex-shrink-0" size={20} />
                     <p>
-                      Production payout automation will use approved contribution records and the contributor wallet address from the application form. Admins can later connect GitHub webhooks and GoodDollar payout transactions to this same dashboard.
+                      Approved rewards are claimable from the G$ rewards vault once an admin funds the vault and prepares the reward ID for the contributor wallet. The claim transaction is verified before the reward is marked paid.
                     </p>
                   </div>
                 </div>

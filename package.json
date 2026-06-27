@@ -16,7 +16,9 @@
     "contracts:verify:celo": "hardhat verify --network celo",
     "lint": "eslint .",
     "preview": "vite preview",
-    "watch": "vite build --watch"
+    "watch": "vite build --watch",
+    "contracts:deploy:gd-vault:celo": "hardhat run scripts/deploy-gooddollar-rewards-vault.cjs --network celo",
+    "contracts:prepare:gd-reward:celo": "hardhat run scripts/prepare-gooddollar-reward.cjs --network celo"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

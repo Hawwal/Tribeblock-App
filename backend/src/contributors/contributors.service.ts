@@ -1,5 +1,7 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHmac, timingSafeEqual } from 'crypto';
+import { createPublicClient, decodeEventLog, http, parseUnits } from 'viem';
 import {
   ContributorApplicationStatus,
   ContributorContributionStatus,
@@ -61,6 +63,26 @@ type RewardsDashboardInput = {
   githubUsername?: string;
   walletAddress?: string;
 };
+
+type GithubWebhookInput = {
+  event?: string;
+  signature?: string;
+  rawBody?: Buffer;
+  payload: Record<string, any>;
+};
+
+const goodDollarRewardsVaultAbi = [
+  {
+    name: 'RewardClaimed',
+    type: 'event',
+    inputs: [
+      { name: 'rewardHash', type: 'bytes32', indexed: true },
+      { name: 'rewardId', type: 'string', indexed: false },
+      { name: 'recipient', type: 'address', indexed: true },
+      { name: 'amount', type: 'uint256', indexed: false },
+    ],
+  },
+] as const;
 
 @Injectable()
 export class ContributorsService {
@@ -182,6 +204,57 @@ export class ContributorsService {
     };
   }
 
+  async syncGithubPullRequestWebhook(input: GithubWebhookInput) {
+    this.verifyGithubWebhook(input.signature, input.rawBody);
+
+    if (input.event && input.event !== 'pull_request') {
+      return { ignored: true, reason: 'Only pull_request events are synced.' };
+    }
+
+    const pullRequest = input.payload.pull_request;
+
+    if (!pullRequest) {
+      throw new BadRequestException('GitHub pull_request payload is required.');
+    }
+
+    const githubUsername = this.normalizeHandle(pullRequest.user?.login ?? '');
+    const contributor = githubUsername
+      ? await this.prisma.contributorApplication.findFirst({ where: { githubUsername }, orderBy: { createdAt: 'desc' } })
+      : null;
+    const merged = input.payload.action === 'closed' && pullRequest.merged === true;
+    const status = merged ? ContributorContributionStatus.APPROVED : ContributorContributionStatus.PENDING_REVIEW;
+    const pullRequestUrl = pullRequest.html_url as string | undefined;
+
+    if (!githubUsername || !pullRequestUrl) {
+      throw new BadRequestException('GitHub webhook is missing contributor username or pull request URL.');
+    }
+
+    const contributionType = this.githubContributionType(pullRequest.labels);
+    const data = {
+      contributorId: contributor?.id,
+      githubUsername,
+      repositoryUrl: input.payload.repository?.html_url ?? 'https://github.com/Tribe-Block-University',
+      pullRequestUrl,
+      commitSha: pullRequest.merge_commit_sha ?? pullRequest.head?.sha,
+      title: pullRequest.title ?? 'GitHub pull request contribution',
+      contributionType,
+      status,
+      approvedAt: merged ? new Date() : undefined,
+    };
+
+    const existing = await this.prisma.contributorContribution.findFirst({ where: { pullRequestUrl } });
+    const contribution = existing
+      ? await this.prisma.contributorContribution.update({ where: { id: existing.id }, data, include: { contributor: true, rewards: true } })
+      : await this.prisma.contributorContribution.create({ data, include: { contributor: true, rewards: true } });
+
+    return {
+      ignored: false,
+      merged,
+      matchedContributor: Boolean(contributor),
+      contribution,
+    };
+  }
+
   async getRewardsDashboard(input: RewardsDashboardInput) {
     const githubUsername = input.githubUsername ? this.normalizeHandle(input.githubUsername) : undefined;
     const walletAddress = input.walletAddress ? this.normalizeWallet(input.walletAddress) : undefined;
@@ -243,6 +316,99 @@ export class ContributorsService {
     };
   }
 
+  async confirmRewardClaim(rewardId: string, transactionHash: string) {
+    if (!/^0x[a-fA-F0-9]{64}$/.test(transactionHash)) {
+      throw new BadRequestException('A valid G$ claim transaction hash is required.');
+    }
+
+    const reward = await this.prisma.contributorReward.findUniqueOrThrow({
+      where: { id: rewardId },
+      include: { contribution: true },
+    });
+
+    if (reward.status === ContributorRewardStatus.PAID) {
+      return reward;
+    }
+
+    if (reward.status !== ContributorRewardStatus.READY) {
+      throw new BadRequestException('This reward is not ready to claim yet.');
+    }
+
+    const vaultAddress = this.config.get<string>('GOODDOLLAR_REWARDS_VAULT_ADDRESS');
+
+    if (!vaultAddress) {
+      throw new BadRequestException('G$ rewards vault is not configured yet.');
+    }
+
+    const rpcUrl = this.config.get<string>('CELO_RPC_URL') ?? 'https://forno.celo.org';
+    const decimals = this.config.get<number>('GOODDOLLAR_DECIMALS') ?? 18;
+    const expectedAmount = parseUnits(reward.amountGd.toString(), decimals);
+    const client = createPublicClient({ transport: http(rpcUrl) });
+    const hash = transactionHash as `0x${string}`;
+
+    try {
+      const [transaction, receipt] = await Promise.all([
+        client.getTransaction({ hash }),
+        client.getTransactionReceipt({ hash }),
+      ]);
+
+      if (receipt.status !== 'success') {
+        throw new BadRequestException('G$ claim transaction was found but did not succeed on-chain.');
+      }
+
+      if (!transaction.to || transaction.to.toLowerCase() !== vaultAddress.toLowerCase()) {
+        throw new BadRequestException('G$ claim transaction was not sent to the configured rewards vault.');
+      }
+
+      const claimEvent = receipt.logs
+        .filter((log) => log.address.toLowerCase() === vaultAddress.toLowerCase())
+        .map((log) => {
+          try {
+            return decodeEventLog({
+              abi: goodDollarRewardsVaultAbi,
+              data: log.data,
+              topics: log.topics,
+            });
+          } catch {
+            return null;
+          }
+        })
+        .find((event) => {
+          if (!event || event.eventName !== 'RewardClaimed') return false;
+          return (
+            event.args.rewardId === reward.id &&
+            event.args.recipient.toLowerCase() === reward.walletAddress.toLowerCase() &&
+            event.args.amount === expectedAmount
+          );
+        });
+
+      if (!claimEvent || claimEvent.eventName !== 'RewardClaimed') {
+        throw new BadRequestException('G$ claim event did not match this reward, wallet, and amount.');
+      }
+
+      const updatedReward = await this.prisma.contributorReward.update({
+        where: { id: reward.id },
+        data: {
+          status: ContributorRewardStatus.PAID,
+          transactionHash,
+          notes: this.appendNote(reward.notes, 'G$ claim verified on Celo block ' + receipt.blockNumber.toString() + '.'),
+        },
+      });
+
+      if (reward.contributionId) {
+        await this.prisma.contributorContribution.update({
+          where: { id: reward.contributionId },
+          data: { status: ContributorContributionStatus.REWARDED },
+        });
+      }
+
+      return updatedReward;
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException('Unable to verify G$ claim on Celo yet. Try again after the transaction confirms.');
+    }
+  }
+
   async seedDemoContribution(applicationId: string) {
     const contributor = await this.prisma.contributorApplication.findUniqueOrThrow({ where: { id: applicationId } });
 
@@ -268,10 +434,34 @@ export class ContributorsService {
         walletAddress: contributor.walletAddress,
         tokenAddress: this.config.get<string>('GOODDOLLAR_TOKEN_ADDRESS'),
         chainId: this.config.get<number>('GOODDOLLAR_CHAIN_ID'),
-        notes: 'Demo reward record. Replace with GitHub webhook and payout automation in production.',
+        notes: 'Demo reward record. Prepare this reward in the G$ vault before contributor claim testing.',
       },
       include: { contribution: true, contributor: true },
     });
+  }
+
+  private verifyGithubWebhook(signature?: string, rawBody?: Buffer) {
+    const secret = this.config.get<string>('GITHUB_WEBHOOK_SECRET');
+
+    if (!secret) return;
+
+    if (!signature || !rawBody) {
+      throw new UnauthorizedException('GitHub webhook signature is required.');
+    }
+
+    const expected = 'sha256=' + createHmac('sha256', secret).update(rawBody).digest('hex');
+    const providedBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expected);
+
+    if (providedBuffer.length !== expectedBuffer.length || !timingSafeEqual(providedBuffer, expectedBuffer)) {
+      throw new UnauthorizedException('GitHub webhook signature is invalid.');
+    }
+  }
+
+  private githubContributionType(labels?: Array<{ name?: string }>) {
+    const rewardLabel = labels?.find((label) => label.name?.toLowerCase().startsWith('tribeblock:reward:'));
+    const type = rewardLabel?.name?.split(':').slice(2).join(':').trim();
+    return type || 'GitHub pull request';
   }
 
   private normalizeHandle(value: string) {
@@ -293,12 +483,18 @@ export class ContributorsService {
     return trimmed ? trimmed : undefined;
   }
 
+  private appendNote(existing: string | null, note: string) {
+    return existing ? existing + ' ' + note : note;
+  }
+
   private goodDollarConfig() {
     return {
       tokenSymbol: 'G$',
       tokenAddress: this.config.get<string>('GOODDOLLAR_TOKEN_ADDRESS') ?? null,
+      vaultAddress: this.config.get<string>('GOODDOLLAR_REWARDS_VAULT_ADDRESS') ?? null,
       chainId: this.config.get<number>('GOODDOLLAR_CHAIN_ID') ?? 42220,
-      distributionMode: 'admin-reviewed payout',
+      decimals: this.config.get<number>('GOODDOLLAR_DECIMALS') ?? 18,
+      distributionMode: 'vault claim',
     };
   }
 }

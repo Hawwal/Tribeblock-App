@@ -15,7 +15,9 @@ const envSchema = z.object({
   CERTIFICATE_MINTER_PRIVATE_KEY: z.string().regex(/^(0x)?[a-fA-F0-9]{64}$/).optional(),
   CERTIFICATE_PUBLIC_BASE_URL: z.string().url().optional(),
   GOODDOLLAR_TOKEN_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+  GOODDOLLAR_REWARDS_VAULT_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
   GOODDOLLAR_CHAIN_ID: z.coerce.number().default(42220),
+  GOODDOLLAR_DECIMALS: z.coerce.number().default(18),
   LOCAL_BANK_PROVIDER: z.string().default('manual'),
   USD_TO_NGN_RATE: z.coerce.number().default(1500),
   USD_TO_KES_RATE: z.coerce.number().default(130),
@@ -26,6 +28,7 @@ const envSchema = z.object({
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),
   GITHUB_REDIRECT_URI: z.string().url().optional(),
+  GITHUB_WEBHOOK_SECRET: z.string().optional(),
   ADMIN_EMAILS: z.string().optional(),
 });
 

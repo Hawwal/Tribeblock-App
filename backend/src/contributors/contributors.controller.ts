@@ -1,7 +1,12 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ContributorExperienceLevel } from '@prisma/client';
 import { ArrayNotEmpty, IsArray, IsBoolean, IsEmail, IsEnum, IsOptional, IsString } from 'class-validator';
 import { ContributorsService } from './contributors.service';
+
+class ConfirmRewardClaimDto {
+  @IsString()
+  transactionHash: string;
+}
 
 class ContributorApplicationDto {
   @IsString()
@@ -65,8 +70,28 @@ export class ContributorsController {
     return this.contributorsService.createApplication(dto);
   }
 
+  @Post('github/webhook')
+  githubWebhook(
+    @Body() payload: Record<string, any>,
+    @Headers('x-github-event') event?: string,
+    @Headers('x-hub-signature-256') signature?: string,
+    @Req() request?: { rawBody?: Buffer },
+  ) {
+    return this.contributorsService.syncGithubPullRequestWebhook({
+      event,
+      signature,
+      rawBody: request?.rawBody,
+      payload,
+    });
+  }
+
   @Get('rewards')
   rewardsDashboard(@Query('githubUsername') githubUsername?: string, @Query('walletAddress') walletAddress?: string) {
     return this.contributorsService.getRewardsDashboard({ githubUsername, walletAddress });
+  }
+
+  @Patch('rewards/:rewardId/claim-confirmation')
+  confirmRewardClaim(@Param('rewardId') rewardId: string, @Body() dto: ConfirmRewardClaimDto) {
+    return this.contributorsService.confirmRewardClaim(rewardId, dto.transactionHash);
   }
 }

@@ -7,6 +7,8 @@ import {
   Code2,
   CreditCard,
   FileCheck2,
+  Gift,
+  GitPullRequest,
   Layers3,
   PencilLine,
   ShieldCheck,
@@ -21,6 +23,7 @@ import SignUpModal from '@/components/SignUpModal';
 import {
   AUTH_SESSION_EVENT,
   createAdminCourse,
+  createAdminContributorReward,
   createAdminCoupon,
   createAdminExercise,
   createAdminLesson,
@@ -29,16 +32,20 @@ import {
   fetchAdminCoupons,
   fetchAdminContributorApplications,
   fetchAdminCourseReviewQueue,
+  fetchAdminGoodDollarConfig,
   fetchAdminOverview,
   fetchAdminPayments,
   getSession,
   publishAdminCourse,
   reviewAdminContributorApplication,
   reviewAdminCourse,
+  syncAdminGithubContribution,
   verifyPaymentIntent,
   type AdminAuthoringCourse,
   type AdminContributorApplication,
+  type AdminContributorReward,
   type AdminCoupon,
+  type AdminGoodDollarConfig,
   type AdminCourseReviewItem,
   type AdminOverview,
   type AdminPayment,
@@ -48,10 +55,40 @@ import {
   type LessonAuthoringInput,
   type ModuleAuthoringInput,
 } from '@/lib/auth';
+import { formatWalletAddress, prepareGoodDollarReward } from '@/lib/wallet';
 
 const paymentFilters = ['', 'PENDING', 'REQUIRES_ACTION', 'CONFIRMED', 'FAILED'];
 const courseFilters = ['', 'DRAFT', 'UNDER_REVIEW', 'CHANGES_REQUESTED'];
 const applicationFilters = ['', 'PENDING', 'APPROVED', 'REJECTED'];
+type GithubSyncStatus = 'PENDING_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED';
+
+type RewardFormState = {
+  amountGd: string;
+  title: string;
+  contributionType: string;
+  repositoryUrl: string;
+  pullRequestUrl: string;
+  notes: string;
+};
+
+const defaultRewardForm: RewardFormState = {
+  amountGd: '25',
+  title: 'Approved TribeBlock contribution',
+  contributionType: 'Platform improvement',
+  repositoryUrl: 'https://github.com/Tribe-Block-University',
+  pullRequestUrl: '',
+  notes: '',
+};
+
+const defaultGithubSyncForm = {
+  githubUsername: '',
+  repositoryUrl: 'https://github.com/Tribe-Block-University',
+  pullRequestUrl: '',
+  commitSha: '',
+  title: '',
+  contributionType: 'Platform improvement',
+  status: 'APPROVED' as GithubSyncStatus,
+};
 
 const AdminDashboard: React.FC = () => {
   const [isSignUpOpen, setIsSignUpOpen] = useState(false);
@@ -62,11 +99,13 @@ const AdminDashboard: React.FC = () => {
   const [authoringCourses, setAuthoringCourses] = useState<AdminAuthoringCourse[]>([]);
   const [applications, setApplications] = useState<AdminContributorApplication[]>([]);
   const [coupons, setCoupons] = useState<AdminCoupon[]>([]);
+  const [goodDollarConfig, setGoodDollarConfig] = useState<AdminGoodDollarConfig | null>(null);
   const [paymentFilter, setPaymentFilter] = useState('');
   const [courseFilter, setCourseFilter] = useState('');
   const [applicationFilter, setApplicationFilter] = useState('PENDING');
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthoringLoading, setIsAuthoringLoading] = useState(false);
+  const [preparingRewardId, setPreparingRewardId] = useState('');
   const [message, setMessage] = useState('');
   const [selectedCourseId, setSelectedCourseId] = useState('');
   const [selectedModuleId, setSelectedModuleId] = useState('');
@@ -99,6 +138,8 @@ const AdminDashboard: React.FC = () => {
     starterFilesJson: '{\n  "index.html": "<main id=\\"app\\">Build here</main>",\n  "style.css": "body { font-family: system-ui, sans-serif; }",\n  "script.js": "console.log(\\"Tribe Block University\\");"\n}',
     testsJson: '[\n  {\n    "name": "Required output exists",\n    "assertion": "Submitted files include the requested solution.",\n    "isHidden": false\n  }\n]',
   });
+  const [githubSyncForm, setGithubSyncForm] = useState(defaultGithubSyncForm);
+  const [rewardForms, setRewardForms] = useState<Record<string, RewardFormState>>({});
   const [couponForm, setCouponForm] = useState({
     code: '',
     description: '',
@@ -176,17 +217,19 @@ const AdminDashboard: React.FC = () => {
     setMessage('');
 
     try {
-      const [nextOverview, nextPayments, nextCourses, nextApplications] = await Promise.all([
+      const [nextOverview, nextPayments, nextCourses, nextApplications, nextGoodDollarConfig] = await Promise.all([
         fetchAdminOverview(),
         fetchAdminPayments(paymentFilter || undefined),
         fetchAdminCourseReviewQueue(courseFilter || undefined),
         fetchAdminContributorApplications(applicationFilter || undefined),
+        fetchAdminGoodDollarConfig(),
       ]);
 
       setOverview(nextOverview);
       setPayments(nextPayments);
       setCourses(nextCourses);
       setApplications(nextApplications);
+      setGoodDollarConfig(nextGoodDollarConfig);
       if (isAdmin) {
         setCoupons(await fetchAdminCoupons());
       }
@@ -345,6 +388,83 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const updateRewardForm = (applicationId: string, patch: Partial<RewardFormState>) => {
+    setRewardForms((current) => ({
+      ...current,
+      [applicationId]: { ...(current[applicationId] ?? defaultRewardForm), ...patch },
+    }));
+  };
+
+  const rewardFormFor = (applicationId: string) => rewardForms[applicationId] ?? defaultRewardForm;
+
+  const handleSyncGithubContribution = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setMessage('');
+
+    try {
+      await syncAdminGithubContribution({
+        ...githubSyncForm,
+        pullRequestUrl: githubSyncForm.pullRequestUrl || undefined,
+        commitSha: githubSyncForm.commitSha || undefined,
+      });
+      setMessage('GitHub contribution synced into contributor operations.');
+      setGithubSyncForm(defaultGithubSyncForm);
+      await loadDashboard();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to sync GitHub contribution.');
+    }
+  };
+
+  const handleCreateReward = async (application: AdminContributorApplication, event: React.FormEvent) => {
+    event.preventDefault();
+    setMessage('');
+
+    const form = rewardFormFor(application.id);
+
+    try {
+      const reward = await createAdminContributorReward(application.id, {
+        amountGd: form.amountGd,
+        title: form.title,
+        contributionType: form.contributionType,
+        repositoryUrl: form.repositoryUrl,
+        pullRequestUrl: form.pullRequestUrl || undefined,
+        notes: form.notes || undefined,
+      });
+      setMessage(`G$ reward created. Reward ID ${reward.id} is ready to prepare in the vault.`);
+      setRewardForms((current) => ({ ...current, [application.id]: defaultRewardForm }));
+      await loadDashboard();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to create contributor reward.');
+    }
+  };
+
+  const handlePrepareReward = async (reward: AdminContributorReward) => {
+    setMessage('');
+
+    if (!goodDollarConfig?.vaultAddress) {
+      setMessage('The G$ rewards vault address is not configured yet.');
+      return;
+    }
+
+    setPreparingRewardId(reward.id);
+
+    try {
+      const transactionHash = await prepareGoodDollarReward({
+        vaultAddress: goodDollarConfig.vaultAddress,
+        rewardId: reward.id,
+        recipientAddress: reward.walletAddress,
+        amount: reward.amountGd,
+        decimals: goodDollarConfig.decimals,
+      });
+      setMessage(`Reward prepared in the G$ vault. Transaction: ${transactionHash}`);
+      await loadDashboard();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to prepare reward in the G$ vault.');
+    } finally {
+      setPreparingRewardId('');
+    }
+  };
+
   const handleCreateCoupon = async (event: React.FormEvent) => {
     event.preventDefault();
     setMessage('');
@@ -490,6 +610,7 @@ const AdminDashboard: React.FC = () => {
                                 Tx: {payment.transactionHash}
                               </p>
                             )}
+                            <PaymentProof payment={payment} />
                           </div>
 
                           {isAdmin && payment.status !== 'CONFIRMED' && (
@@ -562,6 +683,13 @@ const AdminDashboard: React.FC = () => {
                 </OperationsPanel>
                   </section>
 
+                  <GithubContributionSync
+                    form={githubSyncForm}
+                    onFormChange={setGithubSyncForm}
+                    onSubmit={handleSyncGithubContribution}
+                    webhookPath="/api/contributors/github/webhook"
+                  />
+
                   <OperationsPanel
                 title="Contributor Applications"
                 icon={Users}
@@ -600,6 +728,67 @@ const AdminDashboard: React.FC = () => {
                           </button>
                         </div>
                       )}
+
+                      <div className="mt-4 space-y-3">
+                        <div className="rounded-md bg-secondary/50 p-3">
+                          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Synced contributions</p>
+                          {(application.contributions ?? []).slice(0, 3).map((contribution) => (
+                            <div key={contribution.id} className="mt-2 text-sm">
+                              <p className="font-semibold text-foreground">{contribution.title}</p>
+                              <p className="text-xs text-muted-foreground">{contribution.contributionType} - {contribution.status}</p>
+                              {contribution.pullRequestUrl && (
+                                <a className="text-xs font-semibold text-primary break-all" href={contribution.pullRequestUrl} target="_blank" rel="noreferrer">
+                                  Pull request
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                          {!(application.contributions ?? []).length && <p className="mt-2 text-xs text-muted-foreground">No GitHub contributions synced yet.</p>}
+                        </div>
+
+                        <div className="rounded-md bg-secondary/50 p-3">
+                          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">G$ rewards</p>
+                          {(application.rewards ?? []).slice(0, 3).map((reward) => (
+                            <div key={reward.id} className="mt-2 rounded-md border border-border bg-background p-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div>
+                                  <p className="font-semibold text-foreground">{reward.amountGd} G$</p>
+                                  <p className="text-xs text-muted-foreground">{reward.status} - {formatWalletAddress(reward.walletAddress)}</p>
+                                </div>
+                                {isAdmin && reward.status === 'READY' && !reward.transactionHash && (
+                                  <button
+                                    onClick={() => handlePrepareReward(reward)}
+                                    disabled={preparingRewardId === reward.id}
+                                    className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+                                  >
+                                    <Gift size={14} />
+                                    {preparingRewardId === reward.id ? 'Preparing...' : 'Prepare Vault'}
+                                  </button>
+                                )}
+                              </div>
+                              <p className="mt-2 break-all text-[11px] text-muted-foreground">Reward ID: {reward.id}</p>
+                            </div>
+                          ))}
+                          {!(application.rewards ?? []).length && <p className="mt-2 text-xs text-muted-foreground">No rewards created yet.</p>}
+                        </div>
+
+                        {isAdmin && application.status === 'APPROVED' && (
+                          <form onSubmit={(event) => handleCreateReward(application, event)} className="rounded-md border border-border p-3 space-y-3">
+                            <div className="flex items-center gap-2">
+                              <Gift className="text-primary" size={16} />
+                              <p className="font-semibold text-foreground">Create G$ Reward</p>
+                            </div>
+                            <div className="grid sm:grid-cols-2 gap-3">
+                              <AdminInput label="Amount G$" value={rewardFormFor(application.id).amountGd} onChange={(amountGd) => updateRewardForm(application.id, { amountGd })} required />
+                              <AdminInput label="Contribution Type" value={rewardFormFor(application.id).contributionType} onChange={(contributionType) => updateRewardForm(application.id, { contributionType })} required />
+                            </div>
+                            <AdminInput label="Contribution Title" value={rewardFormFor(application.id).title} onChange={(title) => updateRewardForm(application.id, { title })} required />
+                            <AdminInput label="Pull Request URL" value={rewardFormFor(application.id).pullRequestUrl} onChange={(pullRequestUrl) => updateRewardForm(application.id, { pullRequestUrl })} />
+                            <AdminInput label="Notes" value={rewardFormFor(application.id).notes} onChange={(notes) => updateRewardForm(application.id, { notes })} />
+                            <button className="btn-primary w-full py-3" type="submit">Create Reward Record</button>
+                          </form>
+                        )}
+                      </div>
                     </div>
                   ))}
                   {!applications.length && <EmptyState text={isLoading ? 'Loading applications...' : 'No contributor applications match this filter.'} />}
@@ -844,6 +1033,56 @@ const AuthoringWorkspace: React.FC<AuthoringWorkspaceProps> = ({
           </div>
           <button disabled={!selectedLessonId} className="btn-primary w-full py-3 disabled:opacity-50" type="submit">Add IDE Exercise</button>
         </form>
+      </div>
+    </div>
+  </OperationsPanel>
+);
+
+const GithubContributionSync = ({
+  form,
+  onFormChange,
+  onSubmit,
+  webhookPath,
+}: {
+  form: typeof defaultGithubSyncForm;
+  onFormChange: (value: typeof defaultGithubSyncForm) => void;
+  onSubmit: (event: React.FormEvent) => void;
+  webhookPath: string;
+}) => (
+  <OperationsPanel title="GitHub Contribution Sync" icon={GitPullRequest}>
+    <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-5">
+      <form onSubmit={onSubmit} className="rounded-lg border border-border p-4 space-y-3">
+        <h3 className="font-bold text-foreground">Sync Reviewed Pull Request</h3>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <AdminInput label="GitHub Username" value={form.githubUsername} onChange={(githubUsername) => onFormChange({ ...form, githubUsername })} required />
+          <AdminSelect
+            label="Status"
+            value={form.status}
+            values={['PENDING_REVIEW', 'APPROVED', 'CHANGES_REQUESTED']}
+            onChange={(status) => onFormChange({ ...form, status: status as GithubSyncStatus })}
+          />
+        </div>
+        <AdminInput label="Repository URL" value={form.repositoryUrl} onChange={(repositoryUrl) => onFormChange({ ...form, repositoryUrl })} required />
+        <AdminInput label="Pull Request URL" value={form.pullRequestUrl} onChange={(pullRequestUrl) => onFormChange({ ...form, pullRequestUrl })} />
+        <AdminInput label="Title" value={form.title} onChange={(title) => onFormChange({ ...form, title })} required />
+        <div className="grid sm:grid-cols-2 gap-3">
+          <AdminInput label="Contribution Type" value={form.contributionType} onChange={(contributionType) => onFormChange({ ...form, contributionType })} required />
+          <AdminInput label="Commit SHA" value={form.commitSha} onChange={(commitSha) => onFormChange({ ...form, commitSha })} />
+        </div>
+        <button className="btn-primary w-full py-3" type="submit">Sync Contribution</button>
+      </form>
+
+      <div className="rounded-lg border border-border p-4">
+        <h3 className="font-bold text-foreground">Webhook Automation</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Add this endpoint to the GitHub repository webhook settings for pull request events. Merged PRs are recorded as approved contributions and matched by GitHub username.
+        </p>
+        <div className="mt-4 rounded-md bg-secondary px-3 py-2 text-sm font-semibold text-foreground break-all">
+          {webhookPath}
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          In production, set GITHUB_WEBHOOK_SECRET on Render and use the same secret in GitHub so webhook payloads are verified.
+        </p>
       </div>
     </div>
   </OperationsPanel>

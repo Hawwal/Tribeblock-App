@@ -193,6 +193,7 @@ export type ContributorRewardsDashboard = {
     transactionHash?: string | null;
     notes?: string | null;
     createdAt: string;
+    updatedAt?: string;
   }>;
   totals: {
     approvedContributions: number;
@@ -204,7 +205,9 @@ export type ContributorRewardsDashboard = {
   goodDollar: {
     tokenSymbol: string;
     tokenAddress?: string | null;
+    vaultAddress?: string | null;
     chainId: number;
+    decimals: number;
     distributionMode: string;
   };
 };
@@ -253,6 +256,13 @@ export async function fetchContributorRewards(input: { githubUsername?: string; 
   if (input.walletAddress) params.set('walletAddress', input.walletAddress);
 
   return request<ContributorRewardsDashboard>(`/api/contributors/rewards?${params.toString()}`);
+}
+
+export async function confirmContributorRewardClaim(rewardId: string, transactionHash: string) {
+  return request<ContributorRewardsDashboard['rewards'][number]>(`/api/contributors/rewards/${rewardId}/claim-confirmation`, {
+    method: 'PATCH',
+    body: JSON.stringify({ transactionHash }),
+  });
 }
 
 export async function loadCoursesWithFallback(): Promise<ApiCourse[]> {

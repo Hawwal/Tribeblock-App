@@ -37,6 +37,19 @@ export type ContractSubscriptionPaymentInput = TokenPaymentInput & {
   reference: string;
 };
 
+export type GoodDollarRewardClaimInput = {
+  vaultAddress: string;
+  rewardId: string;
+};
+
+export type GoodDollarRewardPrepareInput = {
+  vaultAddress: string;
+  rewardId: string;
+  recipientAddress: string;
+  amount: string;
+  decimals: number;
+};
+
 export function getConnectedWallet(): ConnectedWallet | null {
   try {
     const raw = window.localStorage.getItem(WALLET_STORAGE_KEY);
@@ -177,6 +190,64 @@ export async function sendContractSubscriptionPayment(input: ContractSubscriptio
   });
 }
 
+export async function claimGoodDollarReward(input: GoodDollarRewardClaimInput) {
+  const provider = window.ethereum;
+  const wallet = getConnectedWallet() ?? (await connectCeloWallet({ requireSignature: true }));
+
+  if (!provider) {
+    throw new Error('No wallet provider is available.');
+  }
+
+  if (!isAddress(input.vaultAddress)) {
+    throw new Error('G$ rewards vault is not configured yet.');
+  }
+
+  await ensureCeloMainnet();
+
+  return provider.request<string>({
+    method: 'eth_sendTransaction',
+    params: [
+      {
+        from: wallet.address,
+        to: input.vaultAddress,
+        value: '0x0',
+        data: encodeClaimGoodDollarReward(input.rewardId),
+      },
+    ],
+  });
+}
+
+export async function prepareGoodDollarReward(input: GoodDollarRewardPrepareInput) {
+  const provider = window.ethereum;
+  const wallet = getConnectedWallet() ?? (await connectCeloWallet({ requireSignature: true }));
+
+  if (!provider) {
+    throw new Error('No wallet provider is available.');
+  }
+
+  if (!isAddress(input.vaultAddress) || !isAddress(input.recipientAddress)) {
+    throw new Error('G$ vault or contributor wallet is not configured correctly.');
+  }
+
+  await ensureCeloMainnet();
+
+  return provider.request<string>({
+    method: 'eth_sendTransaction',
+    params: [
+      {
+        from: wallet.address,
+        to: input.vaultAddress,
+        value: '0x0',
+        data: encodePrepareGoodDollarReward(
+          input.rewardId,
+          input.recipientAddress,
+          parseTokenUnits(input.amount, input.decimals),
+        ),
+      },
+    ],
+  });
+}
+
 export async function getErc20Balance(tokenAddress: string, walletAddress: string, decimals: number) {
   const provider = window.ethereum;
 
@@ -262,6 +333,28 @@ function encodePaySubscription(amountUnits: bigint, reference: string) {
   const paddedReference = referenceBytes.padEnd(Math.ceil(referenceBytes.length / 64) * 64, '0');
 
   return `0x${methodSelector}${amountWord}${stringOffsetWord}${lengthWord}${paddedReference}`;
+}
+
+function encodeClaimGoodDollarReward(rewardId: string) {
+  const methodSelector = 'bb8c9797';
+  const stringOffsetWord = (32).toString(16).padStart(64, '0');
+  const rewardBytes = utf8ToHex(rewardId);
+  const lengthWord = (rewardBytes.length / 2).toString(16).padStart(64, '0');
+  const paddedReward = rewardBytes.padEnd(Math.ceil(rewardBytes.length / 64) * 64, '0');
+
+  return `0x${methodSelector}${stringOffsetWord}${lengthWord}${paddedReward}`;
+}
+
+function encodePrepareGoodDollarReward(rewardId: string, recipientAddress: string, amountUnits: bigint) {
+  const methodSelector = 'b8e8995b';
+  const stringOffsetWord = (96).toString(16).padStart(64, '0');
+  const addressWord = recipientAddress.toLowerCase().replace(/^0x/, '').padStart(64, '0');
+  const amountWord = amountUnits.toString(16).padStart(64, '0');
+  const rewardBytes = utf8ToHex(rewardId);
+  const lengthWord = (rewardBytes.length / 2).toString(16).padStart(64, '0');
+  const paddedReward = rewardBytes.padEnd(Math.ceil(rewardBytes.length / 64) * 64, '0');
+
+  return `0x${methodSelector}${stringOffsetWord}${addressWord}${amountWord}${lengthWord}${paddedReward}`;
 }
 
 function utf8ToHex(value: string) {

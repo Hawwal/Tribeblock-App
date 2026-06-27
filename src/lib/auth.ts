@@ -84,6 +84,24 @@ export type PaymentIntent = {
     discountedAmountUsd?: string;
     estimatedExchangeRate?: number;
     provider?: string;
+    confirmationNote?: string;
+    verificationNote?: string;
+    verifiedAt?: string;
+    onChainProof?: {
+      mode?: 'DIRECT_TRANSFER' | 'CONTRACT_PAYMENT';
+      payer?: string;
+      from?: string;
+      to?: string | null;
+      receiverAddress?: string;
+      contractAddress?: string;
+      tokenAddress?: string;
+      amountUnits?: string;
+      paymentReference?: string;
+      blockNumber?: string;
+      gasUsed?: string;
+      effectiveGasPrice?: string;
+      transactionHash?: string;
+    };
   } | null;
   expiresAt?: string | null;
 };
@@ -135,6 +153,37 @@ export type AdminCourseReviewItem = {
   }>;
 };
 
+export type AdminContributorContribution = {
+  id: string;
+  githubUsername: string;
+  repositoryUrl: string;
+  pullRequestUrl?: string | null;
+  commitSha?: string | null;
+  title: string;
+  contributionType: string;
+  status: string;
+  approvedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminContributorReward = {
+  id: string;
+  contributorId: string;
+  contributionId?: string | null;
+  amountGd: string;
+  status: string;
+  walletAddress: string;
+  tokenSymbol: string;
+  tokenAddress?: string | null;
+  chainId?: number | null;
+  transactionHash?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  contribution?: AdminContributorContribution | null;
+};
+
 export type AdminContributorApplication = {
   id: string;
   fullName: string;
@@ -149,6 +198,17 @@ export type AdminContributorApplication = {
   adminNotes?: string | null;
   createdAt: string;
   updatedAt: string;
+  contributions?: AdminContributorContribution[];
+  rewards?: AdminContributorReward[];
+};
+
+export type AdminGoodDollarConfig = {
+  tokenSymbol: 'G$';
+  tokenAddress?: string | null;
+  vaultAddress?: string | null;
+  chainId: number;
+  decimals: number;
+  distributionMode: string;
 };
 
 export type AdminOverview = {
@@ -560,6 +620,50 @@ export async function reviewAdminContributorApplication(applicationId: string, s
   });
 }
 
+export async function fetchAdminGoodDollarConfig() {
+  const session = requireSession();
+
+  return request<AdminGoodDollarConfig>('/api/admin/gooddollar/config', {
+    headers: sessionHeaders(session),
+  });
+}
+
+export async function syncAdminGithubContribution(input: {
+  githubUsername: string;
+  repositoryUrl: string;
+  pullRequestUrl?: string;
+  commitSha?: string;
+  title: string;
+  contributionType: string;
+  status?: 'PENDING_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED' | 'REWARDED';
+}) {
+  const session = requireSession();
+
+  return request<AdminContributorContribution>('/api/admin/github-contributions/sync', {
+    method: 'POST',
+    headers: sessionHeaders(session),
+    body: JSON.stringify(input),
+  });
+}
+
+export async function createAdminContributorReward(applicationId: string, input: {
+  contributionId?: string;
+  amountGd: string;
+  title?: string;
+  contributionType?: string;
+  repositoryUrl?: string;
+  pullRequestUrl?: string;
+  notes?: string;
+}) {
+  const session = requireSession();
+
+  return request<AdminContributorReward>(`/api/admin/contributor-applications/${applicationId}/rewards`, {
+    method: 'POST',
+    headers: sessionHeaders(session),
+    body: JSON.stringify(input),
+  });
+}
+
 export async function fetchAdminCoupons() {
   const session = requireSession();
 
@@ -811,3 +915,178 @@ async function readErrorMessage(response: Response) {
     return response.statusText;
   }
 }
+
+export type AdminCoupon = {
+  id: string;
+  code: string;
+  description?: string | null;
+  discountPercent: number;
+  appliesToTiers: Array<'BASIC' | 'PLUS' | 'PRO'>;
+  isActive: boolean;
+  startsAt?: string | null;
+  expiresAt?: string | null;
+  maxRedemptions?: number | null;
+  redemptionCount: number;
+  createdAt: string;
+};
+
+export type CouponPreview = {
+  code: string;
+  discountPercent: number;
+  originalAmount: string;
+  discountedAmount: string;
+  savingsAmount: string;
+};
+
+export type AdminAuthoringCourse = AdminCourseReviewItem & {
+  modules: Array<{
+    id: string;
+    title: string;
+    summary: string;
+    sortOrder: number;
+    lessons: Array<{
+      id: string;
+      slug: string;
+      title: string;
+      summary: string;
+      visibility: string;
+      sortOrder: number;
+      exercises: Array<{
+        id: string;
+        slug: string;
+        title: string;
+        runtime: string;
+        visibility: string;
+        tests: Array<{
+          id: string;
+          name: string;
+          assertion: string;
+          isHidden: boolean;
+        }>;
+      }>;
+    }>;
+  }>;
+};
+
+export type CourseAuthoringInput = {
+  title: string;
+  subtitle: string;
+  description: string;
+  category: string;
+  level: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
+  visibility: 'FREE' | 'PREVIEW' | 'PLUS' | 'PRO';
+  isFreeBasic: boolean;
+  estimatedHours: number;
+  languageTags: string[];
+  skillTags: string[];
+};
+
+export type ModuleAuthoringInput = {
+  title: string;
+  summary: string;
+};
+
+export type LessonAuthoringInput = {
+  title: string;
+  summary: string;
+  bodyMarkdown: string;
+  visibility: 'FREE' | 'PREVIEW' | 'PLUS' | 'PRO';
+  estimatedMinutes: number;
+};
+
+export type ExerciseAuthoringInput = {
+  title: string;
+  instructions: string;
+  runtime: 'BROWSER_HTML_CSS_JS' | 'NODE' | 'TYPESCRIPT' | 'PYTHON' | 'JAVA' | 'CPP' | 'BASH' | 'SQL' | 'SOLIDITY';
+  starterFiles: Record<string, string>;
+  solutionFiles?: Record<string, string>;
+  visibility: 'FREE' | 'PREVIEW' | 'PLUS' | 'PRO';
+  tests: Array<{
+    name: string;
+    command?: string;
+    assertion: string;
+    isHidden?: boolean;
+  }>;
+};
+
+export type CheckoutResponse = {
+  subscription: NonNullable<CurrentSubscription>;
+  paymentIntent: PaymentIntent | null;
+  coupon?: CouponPreview | null;
+};
+
+export type EnrollmentSummary = {
+  id: string;
+  status: string;
+  completionPercent: number;
+  startedAt: string;
+  completedAt?: string | null;
+  course: {
+    id: string;
+    slug: string;
+    title: string;
+  };
+};
+
+export type CodeDraft = {
+  id: string;
+  exerciseId: string;
+  files: Record<string, string>;
+  updatedAt: string;
+} | null;
+
+export type CourseAccessReport = {
+  subscriptionTier: 'BASIC' | 'PLUS' | 'PRO';
+  course: {
+    id: string;
+    slug: string;
+    title: string;
+    visibility: string;
+    allowed: boolean;
+    requiredTier: 'BASIC' | 'PLUS' | 'PRO';
+  };
+  lessons: Array<{
+    id: string;
+    title: string;
+    visibility: string;
+    allowed: boolean;
+    requiredTier: 'BASIC' | 'PLUS' | 'PRO';
+  }>;
+  projects: Array<{
+    id: string;
+    title: string;
+    visibility: string;
+    allowed: boolean;
+    requiredTier: 'BASIC' | 'PLUS' | 'PRO';
+  }>;
+};
+
+export type CertificateRecord = {
+  id: string;
+  courseId: string;
+  status: string;
+  certificateNumber: string;
+  metadataUri?: string | null;
+  nftChainId?: number | null;
+  nftContract?: string | null;
+  nftTokenId?: string | null;
+  transactionHash?: string | null;
+  verificationUrl?: string | null;
+  issuedAt?: string | null;
+  course: {
+    id?: string;
+    slug: string;
+    title: string;
+  };
+};
+
+export type PublicCertificateVerification = CertificateRecord & {
+  user: {
+    displayName: string;
+    handle: string;
+  };
+  course: {
+    slug: string;
+    title: string;
+  };
+};

@@ -1,8 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { ContentVisibility, ContributorApplicationStatus, CourseLevel, CourseStatus, ExerciseRuntime, PaymentStatus, SubscriptionTier } from '@prisma/client';
+import { ContentVisibility, ContributorApplicationStatus, ContributorContributionStatus, CourseLevel, CourseStatus, ExerciseRuntime, PaymentStatus, SubscriptionTier } from '@prisma/client';
 import { IsArray, IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
 import { CurrentUser, RequestUser } from '../common/request-user';
-import { ContributorsService } from '../contributors/contributors.service';
 import { AdminService } from './admin.service';
 
 class ReviewDto {
@@ -21,6 +20,61 @@ class ContributorApplicationReviewDto {
   @IsString()
   @IsOptional()
   adminNotes?: string;
+}
+
+class CreateContributorRewardDto {
+  @IsString()
+  amountGd: string;
+
+  @IsString()
+  @IsOptional()
+  contributionId?: string;
+
+  @IsString()
+  @IsOptional()
+  title?: string;
+
+  @IsString()
+  @IsOptional()
+  contributionType?: string;
+
+  @IsString()
+  @IsOptional()
+  repositoryUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  pullRequestUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
+
+class SyncGithubContributionDto {
+  @IsString()
+  githubUsername: string;
+
+  @IsString()
+  repositoryUrl: string;
+
+  @IsString()
+  @IsOptional()
+  pullRequestUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  commitSha?: string;
+
+  @IsString()
+  title: string;
+
+  @IsString()
+  contributionType: string;
+
+  @IsEnum(ContributorContributionStatus)
+  @IsOptional()
+  status?: ContributorContributionStatus;
 }
 
 class CreateCouponDto {
@@ -175,10 +229,7 @@ class CreateExerciseDto {
 
 @Controller('admin')
 export class AdminController {
-  constructor(
-    private readonly adminService: AdminService,
-    private readonly contributorsService: ContributorsService,
-  ) {}
+  constructor(private readonly adminService: AdminService) {}
 
   @Get('overview')
   overview(@CurrentUser() user: RequestUser) {
@@ -198,6 +249,16 @@ export class AdminController {
   @Post('coupons')
   createCoupon(@CurrentUser() user: RequestUser, @Body() dto: CreateCouponDto) {
     return this.adminService.createCoupon(user.id, dto);
+  }
+
+  @Get('gooddollar/config')
+  goodDollarConfig(@CurrentUser() user: RequestUser) {
+    return this.adminService.goodDollarConfig(user.id);
+  }
+
+  @Post('github-contributions/sync')
+  syncGithubContribution(@CurrentUser() user: RequestUser, @Body() dto: SyncGithubContributionDto) {
+    return this.adminService.syncGithubContribution(user.id, dto);
   }
 
   @Get('courses/review-queue')
@@ -254,8 +315,24 @@ export class AdminController {
     return this.adminService.reviewContributorApplication(user.id, applicationId, dto);
   }
 
+  @Post('contributor-applications/:applicationId/rewards')
+  createContributorReward(
+    @CurrentUser() user: RequestUser,
+    @Param('applicationId') applicationId: string,
+    @Body() dto: CreateContributorRewardDto,
+  ) {
+    return this.adminService.createContributorReward(user.id, applicationId, dto);
+  }
+
   @Post('contributor-applications/:applicationId/demo-reward')
-  createDemoContributionReward(@Param('applicationId') applicationId: string) {
-    return this.contributorsService.seedDemoContribution(applicationId);
+  createDemoContributionReward(@CurrentUser() user: RequestUser, @Param('applicationId') applicationId: string) {
+    return this.adminService.createContributorReward(user.id, applicationId, {
+      amountGd: '25',
+      title: 'Approved lesson contribution',
+      contributionType: 'Lesson improvement',
+      repositoryUrl: 'https://github.com/Tribe-Block-University',
+      pullRequestUrl: 'https://github.com/Tribe-Block-University/course-content/pulls',
+      notes: 'Demo reward record.',
+    });
   }
 }

@@ -1,7 +1,9 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import {
   ContentVisibility,
   ContributorApplicationStatus,
+  ContributorContributionStatus,
+  ContributorRewardStatus,
   CourseLevel,
   CourseStatus,
   ExerciseRuntime,
@@ -9,6 +11,7 @@ import {
   SubscriptionTier,
   UserRole,
 } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 
 type ReviewInput = {
@@ -19,6 +22,26 @@ type ReviewInput = {
 type ContributorReviewInput = {
   status: ContributorApplicationStatus;
   adminNotes?: string;
+};
+
+type ContributorRewardInput = {
+  contributionId?: string;
+  amountGd: string;
+  title?: string;
+  contributionType?: string;
+  repositoryUrl?: string;
+  pullRequestUrl?: string;
+  notes?: string;
+};
+
+type GithubContributionSyncInput = {
+  githubUsername: string;
+  repositoryUrl: string;
+  pullRequestUrl?: string;
+  commitSha?: string;
+  title: string;
+  contributionType: string;
+  status?: ContributorContributionStatus;
 };
 
 type CouponInput = {
@@ -78,7 +101,10 @@ type ExerciseAuthoringInput = {
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   async overview(userId: string) {
     await this.assertAdminOrReviewer(userId);
@@ -311,6 +337,10 @@ export class AdminService {
     return this.prisma.contributorApplication.findMany({
       where: status ? { status } : undefined,
       orderBy: { createdAt: 'desc' },
+      include: {
+        contributions: { orderBy: { createdAt: 'desc' }, take: 8 },
+        rewards: { orderBy: { createdAt: 'desc' }, take: 8, include: { contribution: true } },
+      },
     });
   }
 
@@ -324,6 +354,98 @@ export class AdminService {
         adminNotes: input.adminNotes,
       },
     });
+  }
+
+  async syncGithubContribution(userId: string, input: GithubContributionSyncInput) {
+    await this.assertAdminOrReviewer(userId);
+
+    const githubUsername = this.normalizeGithubUsername(input.githubUsername);
+    const contributor = await this.prisma.contributorApplication.findFirst({
+      where: { githubUsername },
+      orderBy: { createdAt: 'desc' },
+    });
+    const status = input.status ?? ContributorContributionStatus.APPROVED;
+    const approvedAt = status === ContributorContributionStatus.APPROVED || status === ContributorContributionStatus.REWARDED ? new Date() : undefined;
+
+    const existing = input.pullRequestUrl
+      ? await this.prisma.contributorContribution.findFirst({ where: { pullRequestUrl: input.pullRequestUrl.trim() } })
+      : null;
+
+    const data = {
+      contributorId: contributor?.id,
+      githubUsername,
+      repositoryUrl: input.repositoryUrl.trim(),
+      pullRequestUrl: this.optionalTrim(input.pullRequestUrl),
+      commitSha: this.optionalTrim(input.commitSha),
+      title: input.title.trim(),
+      contributionType: input.contributionType.trim(),
+      status,
+      approvedAt,
+    };
+
+    return existing
+      ? this.prisma.contributorContribution.update({ where: { id: existing.id }, data, include: { contributor: true, rewards: true } })
+      : this.prisma.contributorContribution.create({ data, include: { contributor: true, rewards: true } });
+  }
+
+  async createContributorReward(userId: string, applicationId: string, input: ContributorRewardInput) {
+    await this.assertAdmin(userId);
+
+    const amountGd = this.normalizeRewardAmount(input.amountGd);
+    const contributor = await this.prisma.contributorApplication.findUniqueOrThrow({ where: { id: applicationId } });
+
+    if (contributor.status !== ContributorApplicationStatus.APPROVED) {
+      throw new BadRequestException('Approve this contributor before creating a G$ reward.');
+    }
+
+    const contribution = input.contributionId
+      ? await this.prisma.contributorContribution.update({
+          where: { id: input.contributionId },
+          data: {
+            contributorId: contributor.id,
+            status: ContributorContributionStatus.APPROVED,
+            approvedAt: new Date(),
+          },
+        })
+      : await this.prisma.contributorContribution.create({
+          data: {
+            contributorId: contributor.id,
+            githubUsername: contributor.githubUsername,
+            repositoryUrl: input.repositoryUrl?.trim() || 'https://github.com/Tribe-Block-University',
+            pullRequestUrl: this.optionalTrim(input.pullRequestUrl),
+            title: input.title?.trim() || 'Approved TribeBlock contribution',
+            contributionType: input.contributionType?.trim() || 'Platform improvement',
+            status: ContributorContributionStatus.APPROVED,
+            approvedAt: new Date(),
+          },
+        });
+
+    return this.prisma.contributorReward.create({
+      data: {
+        contributorId: contributor.id,
+        contributionId: contribution.id,
+        amountGd,
+        status: ContributorRewardStatus.READY,
+        walletAddress: contributor.walletAddress,
+        tokenAddress: this.config.get<string>('GOODDOLLAR_TOKEN_ADDRESS'),
+        chainId: this.config.get<number>('GOODDOLLAR_CHAIN_ID') ?? 42220,
+        notes: this.appendNote(input.notes, 'Created from admin dashboard. Prepare this reward in the G$ vault before contributor claim.'),
+      },
+      include: { contribution: true, contributor: true },
+    });
+  }
+
+  async goodDollarConfig(userId: string) {
+    await this.assertAdminOrReviewer(userId);
+
+    return {
+      tokenSymbol: 'G$',
+      tokenAddress: this.config.get<string>('GOODDOLLAR_TOKEN_ADDRESS') ?? null,
+      vaultAddress: this.config.get<string>('GOODDOLLAR_REWARDS_VAULT_ADDRESS') ?? null,
+      chainId: this.config.get<number>('GOODDOLLAR_CHAIN_ID') ?? 42220,
+      decimals: this.config.get<number>('GOODDOLLAR_DECIMALS') ?? 18,
+      distributionMode: 'vault claim',
+    };
   }
 
   async listCoupons(userId: string) {
@@ -360,6 +482,35 @@ export class AdminService {
       counts[String(item[key])] = item._count[key] ?? 0;
       return counts;
     }, {});
+  }
+
+  private normalizeGithubUsername(value: string) {
+    const username = value.trim().replace(/^@/, '');
+
+    if (!username) {
+      throw new BadRequestException('GitHub username is required.');
+    }
+
+    return username;
+  }
+
+  private normalizeRewardAmount(value: string) {
+    const amount = Number(value);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('Reward amount must be greater than zero.');
+    }
+
+    return amount.toFixed(2);
+  }
+
+  private optionalTrim(value?: string) {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
+  private appendNote(existing: string | undefined, note: string) {
+    return existing?.trim() ? existing.trim() + ' ' + note : note;
   }
 
   private async assertAdminOrReviewer(userId: string) {
@@ -409,7 +560,7 @@ export class AdminService {
     });
 
     if (!user || user.role !== UserRole.ADMIN) {
-      throw new ForbiddenException('Only admins can publish courses.');
+      throw new ForbiddenException('Only admins can perform this action.');
     }
   }
 
@@ -440,7 +591,7 @@ export class AdminService {
 
     while (await exists(slug)) {
       suffix += 1;
-      slug = `${root}-${suffix}`;
+      slug = root + '-' + suffix;
     }
 
     return slug;

@@ -1,8 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BillingInterval, Currency, PaymentProvider, PaymentRail, PaymentStatus, SubscriptionStatus, UserRole } from '@prisma/client';
+import { BillingInterval, Currency, PaymentProvider, PaymentRail, PaymentStatus, Prisma, SubscriptionStatus, UserRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
-import { createPublicClient, decodeFunctionData, http, parseUnits } from 'viem';
+import { createPublicClient, decodeEventLog, decodeFunctionData, http, parseUnits } from 'viem';
 import { PrismaService } from '../prisma/prisma.service';
 
 type CreateSubscriptionPaymentInput = {
@@ -36,6 +36,15 @@ const tribeBlockPaymentsAbi = [
       { name: 'paymentReference', type: 'string' },
     ],
     outputs: [],
+  },
+  {
+    name: 'SubscriptionPaid',
+    type: 'event',
+    inputs: [
+      { name: 'payer', type: 'address', indexed: true },
+      { name: 'amount', type: 'uint256', indexed: false },
+      { name: 'paymentReference', type: 'string', indexed: false },
+    ],
   },
 ] as const;
 
@@ -75,6 +84,14 @@ export class PaymentsService {
       throw new NotFoundException('Payment intent not found.');
     }
 
+    if (paymentIntent.provider !== PaymentProvider.CELO_USDT || paymentIntent.rail !== PaymentRail.CELO) {
+      throw new BadRequestException('This payment intent is not a Celo USDT payment.');
+    }
+
+    if (paymentIntent.status === PaymentStatus.CONFIRMED) {
+      return this.findByReference(reference);
+    }
+
     const updatedPayment = await this.prisma.paymentIntent.update({
       where: { reference },
       data: {
@@ -82,7 +99,7 @@ export class PaymentsService {
         status: PaymentStatus.REQUIRES_ACTION,
         providerMetadata: {
           ...this.asObject(paymentIntent.providerMetadata),
-          confirmationNote: 'Transaction hash received. A chain watcher should verify token, amount, and receiver.',
+          confirmationNote: 'Transaction hash received. Verifying token, amount, receiver, and payment reference on Celo.',
         },
       },
       include: { subscription: { include: { plan: true } } },
@@ -103,7 +120,7 @@ export class PaymentsService {
       });
     }
 
-    return this.confirmPayment(reference, verification.note);
+    return this.confirmPayment(reference, verification.note, verification.proof ?? {});
   }
 
   async verifyPayment(adminUserId: string, reference: string, status: 'CONFIRMED' | 'FAILED', note?: string) {
@@ -237,7 +254,7 @@ export class PaymentsService {
     return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   }
 
-  private async confirmPayment(reference: string, note: string) {
+  private async confirmPayment(reference: string, note: string, proof: Prisma.JsonObject = {}) {
     const paymentIntent = await this.prisma.paymentIntent.findUnique({
       where: { reference },
       include: { subscription: true },
@@ -272,6 +289,7 @@ export class PaymentsService {
             ...this.asObject(paymentIntent.providerMetadata),
             verificationNote: note,
             verifiedAt: now.toISOString(),
+            onChainProof: proof,
           },
         },
         include: { subscription: { include: { plan: true } } },
@@ -279,7 +297,7 @@ export class PaymentsService {
     });
   }
 
-  private async verifyCeloTransaction(reference: string, transactionHash: string) {
+  private async verifyCeloTransaction(reference: string, transactionHash: string): Promise<{ verified: boolean; note: string; proof?: Prisma.JsonObject }> {
     const paymentIntent = await this.prisma.paymentIntent.findUnique({ where: { reference } });
 
     if (!paymentIntent) {
@@ -301,8 +319,24 @@ export class PaymentsService {
         return { verified: false, note: 'Transaction was found but did not succeed on-chain.' };
       }
 
+      if (!paymentIntent.blockchainToken) {
+        return { verified: false, note: 'Celo USDT token address is not configured for this payment intent.' };
+      }
+
+      if (!paymentIntent.receiverAddress) {
+        return { verified: false, note: 'Celo payment receiver is not configured for this payment intent.' };
+      }
+
       const expectedAmount = parseUnits(paymentIntent.amount.toString(), paymentIntent.blockchainDecimals ?? 6);
       const paymentMode = metadata.paymentMode;
+      const baseProof = {
+        transactionHash,
+        from: transaction.from,
+        to: transaction.to,
+        blockNumber: receipt.blockNumber.toString(),
+        effectiveGasPrice: (receipt.effectiveGasPrice ?? 0n).toString(),
+        gasUsed: receipt.gasUsed.toString(),
+      };
 
       if (paymentMode === 'CONTRACT_PAYMENT') {
         const contractAddress = ((metadata.paymentContractAddress as string | undefined) ?? paymentIntent.receiverAddress ?? '').toLowerCase();
@@ -322,7 +356,42 @@ export class PaymentsService {
           return { verified: false, note: 'Contract payment did not match the expected amount and TribeBlock reference.' };
         }
 
-        return { verified: true, note: 'Celo contract payment verified on-chain.' };
+        const paidEvent = receipt.logs
+          .filter((log) => log.address.toLowerCase() === contractAddress)
+          .map((log) => {
+            try {
+              return decodeEventLog({
+                abi: tribeBlockPaymentsAbi,
+                data: log.data,
+                topics: log.topics,
+              });
+            } catch {
+              return null;
+            }
+          })
+          .find((event) => {
+            if (!event || event.eventName !== 'SubscriptionPaid') return false;
+            const args = event.args;
+            return args.amount === expectedAmount && args.paymentReference === reference;
+          });
+
+        if (!paidEvent || paidEvent.eventName !== 'SubscriptionPaid') {
+          return { verified: false, note: 'Contract call succeeded, but the SubscriptionPaid event was not found.' };
+        }
+
+        return {
+          verified: true,
+          note: 'Celo contract payment and SubscriptionPaid event verified on-chain.',
+          proof: {
+            ...baseProof,
+            mode: 'CONTRACT_PAYMENT',
+            payer: paidEvent.args.payer,
+            amountUnits: paidEvent.args.amount.toString(),
+            paymentReference: paidEvent.args.paymentReference,
+            contractAddress,
+            tokenAddress: paymentIntent.blockchainToken,
+          },
+        };
       }
 
       if (!transaction.to || transaction.to.toLowerCase() !== (paymentIntent.blockchainToken ?? '').toLowerCase()) {
@@ -335,11 +404,21 @@ export class PaymentsService {
       });
       const [to, amount] = decoded.args;
 
-      if (decoded.functionName !== 'transfer' || to.toLowerCase() !== (paymentIntent.receiverAddress ?? '').toLowerCase() || amount !== expectedAmount) {
+      if (decoded.functionName !== 'transfer' || to.toLowerCase() !== paymentIntent.receiverAddress.toLowerCase() || amount !== expectedAmount) {
         return { verified: false, note: 'USDT transfer did not match the expected receiver and amount.' };
       }
 
-      return { verified: true, note: 'Celo USDT transfer verified on-chain.' };
+      return {
+        verified: true,
+        note: 'Celo USDT transfer verified on-chain.',
+        proof: {
+          ...baseProof,
+          mode: 'DIRECT_TRANSFER',
+          amountUnits: amount.toString(),
+          receiverAddress: to,
+          tokenAddress: paymentIntent.blockchainToken,
+        },
+      };
     } catch {
       return { verified: false, note: 'Transaction hash saved. Waiting for Celo RPC confirmation before activating subscription.' };
     }
