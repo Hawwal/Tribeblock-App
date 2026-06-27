@@ -646,6 +646,42 @@ export async function syncAdminGithubContribution(input: {
   });
 }
 
+export async function syncAdminGithubCourseRepository(input: {
+  fullName: string;
+  ref?: string;
+  repositoryUrl?: string;
+}) {
+  const session = requireSession();
+
+  return request<{
+    repository: string;
+    ref: string;
+    coursesFound: number;
+    coursesSynced: number;
+    syncedCourses: Array<{ slug: string; title: string; status: string; modulesSynced: number; sourcePath: string }>;
+  }>('/api/admin/course-sync/github-repository', {
+    method: 'POST',
+    headers: sessionHeaders(session),
+    body: JSON.stringify(input),
+  });
+}
+
+export async function applyAdminGithubRepoTeamAccess(input: { fullName: string }) {
+  const session = requireSession();
+
+  return request<{
+    skipped: boolean;
+    action: string;
+    message: string;
+    repository?: string;
+    results?: Array<{ teamSlug: string; permission: string }>;
+  }>('/api/admin/github/repositories/team-access', {
+    method: 'POST',
+    headers: sessionHeaders(session),
+    body: JSON.stringify(input),
+  });
+}
+
 export async function createAdminContributorReward(applicationId: string, input: {
   contributionId?: string;
   amountGd: string;

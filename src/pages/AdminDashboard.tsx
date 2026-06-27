@@ -22,6 +22,7 @@ import Header from '@/components/Header';
 import SignUpModal from '@/components/SignUpModal';
 import {
   AUTH_SESSION_EVENT,
+  applyAdminGithubRepoTeamAccess,
   createAdminCourse,
   createAdminContributorReward,
   createAdminCoupon,
@@ -40,6 +41,7 @@ import {
   reviewAdminContributorApplication,
   reviewAdminCourse,
   syncAdminGithubContribution,
+  syncAdminGithubCourseRepository,
   verifyPaymentIntent,
   type AdminAuthoringCourse,
   type AdminContributorApplication,
@@ -92,6 +94,12 @@ const defaultGithubSyncForm = {
   status: 'APPROVED' as GithubSyncStatus,
 };
 
+const defaultGithubCourseSyncForm = {
+  fullName: 'Tribe-Block-University/course-repository-name',
+  ref: '',
+  repositoryUrl: 'https://github.com/Tribe-Block-University/course-repository-name',
+};
+
 const AdminDashboard: React.FC = () => {
   const [isSignUpOpen, setIsSignUpOpen] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(() => getSession()?.user ?? null);
@@ -141,6 +149,7 @@ const AdminDashboard: React.FC = () => {
     testsJson: '[\n  {\n    "name": "Required output exists",\n    "assertion": "Submitted files include the requested solution.",\n    "isHidden": false\n  }\n]',
   });
   const [githubSyncForm, setGithubSyncForm] = useState(defaultGithubSyncForm);
+  const [githubCourseSyncForm, setGithubCourseSyncForm] = useState(defaultGithubCourseSyncForm);
   const [rewardForms, setRewardForms] = useState<Record<string, RewardFormState>>({});
   const [couponForm, setCouponForm] = useState({
     code: '',
@@ -422,6 +431,34 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const handleSyncGithubCourseRepository = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setMessage('');
+
+    try {
+      const result = await syncAdminGithubCourseRepository({
+        fullName: githubCourseSyncForm.fullName,
+        ref: githubCourseSyncForm.ref || undefined,
+        repositoryUrl: githubCourseSyncForm.repositoryUrl || undefined,
+      });
+      setMessage(`Course sync complete. ${result.coursesSynced} of ${result.coursesFound} course package(s) synced.`);
+      await loadDashboard();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to sync GitHub course repository.');
+    }
+  };
+
+  const handleApplyGithubRepoTeamAccess = async () => {
+    setMessage('');
+
+    try {
+      const result = await applyAdminGithubRepoTeamAccess({ fullName: githubCourseSyncForm.fullName });
+      setMessage(result.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to apply GitHub team access.');
+    }
+  };
+
   const handleCreateReward = async (application: AdminContributorApplication, event: React.FormEvent) => {
     event.preventDefault();
     setMessage('');
@@ -696,6 +733,15 @@ const AdminDashboard: React.FC = () => {
                     onSubmit={handleSyncGithubContribution}
                     webhookPath="/api/contributors/github/webhook"
                   />
+
+                  {isAdmin && (
+                    <GithubCourseSync
+                      form={githubCourseSyncForm}
+                      onFormChange={setGithubCourseSyncForm}
+                      onSubmit={handleSyncGithubCourseRepository}
+                      onApplyTeamAccess={handleApplyGithubRepoTeamAccess}
+                    />
+                  )}
 
                   <OperationsPanel
                 title="Contributor Applications"
@@ -1089,6 +1135,63 @@ const GithubContributionSync = ({
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
           In production, set GITHUB_WEBHOOK_SECRET on Render and use the same secret in GitHub so webhook payloads are verified.
+        </p>
+      </div>
+    </div>
+  </OperationsPanel>
+);
+
+const GithubCourseSync = ({
+  form,
+  onFormChange,
+  onSubmit,
+  onApplyTeamAccess,
+}: {
+  form: typeof defaultGithubCourseSyncForm;
+  onFormChange: (value: typeof defaultGithubCourseSyncForm) => void;
+  onSubmit: (event: React.FormEvent) => void;
+  onApplyTeamAccess: () => void;
+}) => (
+  <OperationsPanel title="GitHub Course Sync" icon={BookOpenCheck}>
+    <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-5">
+      <form onSubmit={onSubmit} className="rounded-lg border border-border p-4 space-y-3">
+        <h3 className="font-bold text-foreground">Import Approved Course Repository</h3>
+        <AdminInput
+          label="Repository full name"
+          value={form.fullName}
+          onChange={(fullName) => onFormChange({ ...form, fullName })}
+          required
+        />
+        <div className="grid sm:grid-cols-2 gap-3">
+          <AdminInput
+            label="Branch or ref"
+            value={form.ref}
+            onChange={(ref) => onFormChange({ ...form, ref })}
+          />
+          <AdminInput
+            label="Repository URL"
+            value={form.repositoryUrl}
+            onChange={(repositoryUrl) => onFormChange({ ...form, repositoryUrl })}
+          />
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <button className="btn-primary w-full py-3" type="submit">Sync Courses</button>
+          <button className="rounded-md border border-border px-4 py-3 font-semibold text-foreground" type="button" onClick={onApplyTeamAccess}>
+            Apply Team Access
+          </button>
+        </div>
+      </form>
+
+      <div className="rounded-lg border border-border p-4">
+        <h3 className="font-bold text-foreground">Automatic Import Rules</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Enter a GitHub repository as owner/repo, for example Tribe-Block-University/learn-html. The importer scans for course.yml, module.yml, lessons, quizzes, IDE exercises, practicals, final exam, and final project files.
+        </p>
+        <div className="mt-4 rounded-md bg-secondary px-3 py-2 text-sm font-semibold text-foreground break-all">
+          POST /api/admin/course-sync/github-repository
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Existing courses are updated by slug. Apply Team Access gives course-contributors write access, course-reviewers maintain access, and admins admin access for the selected repo.
         </p>
       </div>
     </div>

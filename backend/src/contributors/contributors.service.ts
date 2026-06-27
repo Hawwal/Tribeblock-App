@@ -9,6 +9,7 @@ import {
   ContributorRewardStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CourseSyncService } from '../courses/course-sync.service';
 
 export const contributorSkills = [
   'HTML',
@@ -89,6 +90,7 @@ export class ContributorsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly courseSync: CourseSyncService,
   ) {}
 
   createApplication(input: CreateContributorApplicationInput) {
@@ -247,11 +249,25 @@ export class ContributorsService {
       ? await this.prisma.contributorContribution.update({ where: { id: existing.id }, data, include: { contributor: true, rewards: true } })
       : await this.prisma.contributorContribution.create({ data, include: { contributor: true, rewards: true } });
 
+    const courseSyncEnabled = this.config.get<boolean>('GITHUB_COURSE_SYNC_ENABLED') ?? true;
+    let courseSyncResult: unknown = null;
+    let courseSyncError: string | null = null;
+
+    if (merged && courseSyncEnabled) {
+      try {
+        courseSyncResult = await this.courseSync.syncRepositoryFromWebhook(input.payload);
+      } catch (error) {
+        courseSyncError = error instanceof Error ? error.message : 'GitHub course sync failed.';
+      }
+    }
+
     return {
       ignored: false,
       merged,
       matchedContributor: Boolean(contributor),
       contribution,
+      courseSync: courseSyncResult,
+      courseSyncError,
     };
   }
 

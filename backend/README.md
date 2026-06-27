@@ -1,6 +1,6 @@
 # Tribe Block University API
 
-NestJS + PostgreSQL + Prisma backend for the Codecademy-style learning platform.
+NestJS + PostgreSQL + Prisma backend for the Tribe Block University learning platform.
 
 ## Local Setup
 
@@ -24,4 +24,4 @@ The API starts on `http://localhost:4000`.
 
 ## Content Policy
 
-Course content in the seed file is original placeholder material. Codecademy-style PDFs can be used as structural inspiration only; import external content only when its license allows reuse.
+Course content in the seed file is original placeholder material. External learning resources can be used as structural inspiration only; import external content only when its license allows reuse.

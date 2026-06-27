@@ -29,6 +29,20 @@ const envSchema = z.object({
   GITHUB_CLIENT_SECRET: z.string().optional(),
   GITHUB_REDIRECT_URI: z.string().url().optional(),
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
+  GITHUB_COURSE_SYNC_ENABLED: z
+    .string()
+    .optional()
+    .transform((value) => (value ? !['false', '0', 'no'].includes(value.toLowerCase()) : true)),
+  GITHUB_COURSE_SYNC_TOKEN: z.string().optional(),
+  GITHUB_ORG_AUTOMATION_ENABLED: z
+    .string()
+    .optional()
+    .transform((value) => (value ? !['false', '0', 'no'].includes(value.toLowerCase()) : true)),
+  GITHUB_ORG_ADMIN_TOKEN: z.string().optional(),
+  GITHUB_ORG_NAME: z.string().default('Tribe-Block-University'),
+  GITHUB_CONTRIBUTOR_TEAM_SLUG: z.string().default('course-contributors'),
+  GITHUB_REVIEWER_TEAM_SLUG: z.string().default('course-reviewers'),
+  GITHUB_ADMIN_TEAM_SLUG: z.string().default('admins'),
   ADMIN_EMAILS: z.string().optional(),
 });
 

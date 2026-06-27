@@ -13,6 +13,8 @@ import {
 } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { CourseSyncService } from '../courses/course-sync.service';
+import { GithubOrgService } from './github-org.service';
 
 type ReviewInput = {
   status: CourseStatus;
@@ -42,6 +44,16 @@ type GithubContributionSyncInput = {
   title: string;
   contributionType: string;
   status?: ContributorContributionStatus;
+};
+
+type GithubCourseSyncInput = {
+  fullName: string;
+  ref?: string;
+  repositoryUrl?: string;
+};
+
+type GithubRepoTeamAccessInput = {
+  fullName: string;
 };
 
 type CouponInput = {
@@ -104,6 +116,8 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly courseSync: CourseSyncService,
+    private readonly githubOrg: GithubOrgService,
   ) {}
 
   async overview(userId: string) {
@@ -347,13 +361,37 @@ export class AdminService {
   async reviewContributorApplication(userId: string, applicationId: string, input: ContributorReviewInput) {
     await this.assertAdminOrReviewer(userId);
 
-    return this.prisma.contributorApplication.update({
+    const application = await this.prisma.contributorApplication.update({
       where: { id: applicationId },
       data: {
         status: input.status,
         adminNotes: input.adminNotes,
       },
     });
+
+    if (input.status !== ContributorApplicationStatus.APPROVED) {
+      return application;
+    }
+
+    try {
+      const result = await this.githubOrg.addContributorToTeam(application.githubUsername);
+      return this.prisma.contributorApplication.update({
+        where: { id: applicationId },
+        data: {
+          adminNotes: this.appendNote(application.adminNotes ?? undefined, `GitHub automation: ${result.message}`),
+        },
+      });
+    } catch (error) {
+      return this.prisma.contributorApplication.update({
+        where: { id: applicationId },
+        data: {
+          adminNotes: this.appendNote(
+            application.adminNotes ?? undefined,
+            `GitHub automation failed: ${error instanceof Error ? error.message : 'Unable to add contributor to GitHub team.'}`,
+          ),
+        },
+      });
+    }
   }
 
   async syncGithubContribution(userId: string, input: GithubContributionSyncInput) {
@@ -386,6 +424,24 @@ export class AdminService {
     return existing
       ? this.prisma.contributorContribution.update({ where: { id: existing.id }, data, include: { contributor: true, rewards: true } })
       : this.prisma.contributorContribution.create({ data, include: { contributor: true, rewards: true } });
+  }
+
+  async syncGithubCourseRepository(userId: string, input: GithubCourseSyncInput) {
+    await this.assertAdmin(userId);
+
+    return this.courseSync.syncRepository({
+      fullName: input.fullName.trim(),
+      ref: this.optionalTrim(input.ref),
+      repositoryUrl: this.optionalTrim(input.repositoryUrl),
+    });
+  }
+
+  async applyGithubRepoTeamAccess(userId: string, input: GithubRepoTeamAccessInput) {
+    await this.assertAdmin(userId);
+
+    return this.githubOrg.applyCourseRepoTeamAccess({
+      fullName: input.fullName,
+    });
   }
 
   async createContributorReward(userId: string, applicationId: string, input: ContributorRewardInput) {

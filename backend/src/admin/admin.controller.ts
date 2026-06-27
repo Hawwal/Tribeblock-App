@@ -77,6 +77,24 @@ class SyncGithubContributionDto {
   status?: ContributorContributionStatus;
 }
 
+class SyncGithubCourseRepositoryDto {
+  @IsString()
+  fullName: string;
+
+  @IsString()
+  @IsOptional()
+  ref?: string;
+
+  @IsString()
+  @IsOptional()
+  repositoryUrl?: string;
+}
+
+class ApplyGithubRepoTeamAccessDto {
+  @IsString()
+  fullName: string;
+}
+
 class CreateCouponDto {
   @IsString()
   code: string;
@@ -259,6 +277,16 @@ export class AdminController {
   @Post('github-contributions/sync')
   syncGithubContribution(@CurrentUser() user: RequestUser, @Body() dto: SyncGithubContributionDto) {
     return this.adminService.syncGithubContribution(user.id, dto);
+  }
+
+  @Post('course-sync/github-repository')
+  syncGithubCourseRepository(@CurrentUser() user: RequestUser, @Body() dto: SyncGithubCourseRepositoryDto) {
+    return this.adminService.syncGithubCourseRepository(user.id, dto);
+  }
+
+  @Post('github/repositories/team-access')
+  applyGithubRepoTeamAccess(@CurrentUser() user: RequestUser, @Body() dto: ApplyGithubRepoTeamAccessDto) {
+    return this.adminService.applyGithubRepoTeamAccess(user.id, dto);
   }
 
   @Get('courses/review-queue')
