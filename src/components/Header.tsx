@@ -17,6 +17,7 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
   const [wallet, setWallet] = useState<ConnectedWallet | null>(() => getConnectedWallet());
   const [walletError, setWalletError] = useState('');
   const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [isWalletOpen, setIsWalletOpen] = useState(false);
 
   const navLinks = [
     { name: 'Home', href: '/' },
@@ -37,6 +38,7 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
   ];
 
   const canOpenAdmin = session?.user.role === 'ADMIN' || session?.user.role === 'MENTOR_REVIEWER';
+  const connectedChainName = wallet ? chainLabel(wallet.chainId) : '';
 
   useEffect(() => {
     const handleSessionChange = () => setSession(getSession());
@@ -60,6 +62,7 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
     setSession(null);
     setIsMenuOpen(false);
     setIsAccountOpen(false);
+    setIsWalletOpen(false);
   };
 
   const handleConnectWallet = async () => {
@@ -69,6 +72,7 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
       const connectedWallet = await connectCeloWallet();
       setWallet(connectedWallet);
       setIsMenuOpen(false);
+      setIsWalletOpen(true);
     } catch (error) {
       setWalletError(error instanceof Error ? error.message : 'Unable to connect wallet.');
     }
@@ -80,11 +84,13 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
     setWalletError('');
     setIsMenuOpen(false);
     setIsAccountOpen(false);
+    setIsWalletOpen(false);
   };
 
   const handleWalletButton = () => {
     if (wallet) {
-      handleDisconnectWallet();
+      setIsWalletOpen((value) => !value);
+      setIsAccountOpen(false);
       return;
     }
 
@@ -180,7 +186,10 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
                 <div className="relative">
                   <button
                     type="button"
-                    onClick={() => setIsAccountOpen((value) => !value)}
+                    onClick={() => {
+                      setIsAccountOpen((value) => !value);
+                      setIsWalletOpen(false);
+                    }}
                     className="inline-flex h-10 w-10 items-center justify-center rounded-md text-foreground/80 hover:bg-secondary hover:text-foreground transition-colors"
                     title={session.user.displayName}
                     aria-label="Account"
@@ -237,16 +246,64 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
                 Sign Up
               </button>
             )}
-            <button
-              type="button"
-              onClick={handleWalletButton}
-              className="payment-cta gap-2"
-              title={wallet ? 'Disconnect wallet' : 'Connect wallet'}
-            >
-              <Wallet size={16} />
-              <span className="hidden xl:inline">{wallet ? formatWalletAddress(wallet.address) : 'Connect Wallet'}</span>
-              <span className="xl:hidden">{wallet ? 'Disconnect' : 'Connect'}</span>
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={handleWalletButton}
+                className="payment-cta gap-2"
+                title={wallet ? 'Wallet details' : 'Connect wallet'}
+                aria-expanded={wallet ? isWalletOpen : undefined}
+              >
+                <Wallet size={16} />
+                <span className="hidden xl:inline">{wallet ? formatWalletAddress(wallet.address) : 'Connect Wallet'}</span>
+                <span className="xl:hidden">{wallet ? 'Wallet' : 'Connect'}</span>
+                {wallet && <ChevronDown size={15} className={`transition-transform ${isWalletOpen ? 'rotate-180' : ''}`} />}
+              </button>
+              <AnimatePresence>
+                {wallet && isWalletOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 8 }}
+                    className="absolute right-0 top-full mt-2 w-72 rounded-lg border border-border bg-card p-3 shadow-card"
+                  >
+                    <div className="flex items-center gap-2 border-b border-border pb-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+                        <Wallet size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-foreground">Connected Wallet</p>
+                        <p className="truncate text-xs text-muted-foreground">{wallet.provider}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-2 text-xs">
+                      <div>
+                        <p className="font-semibold text-foreground">Address</p>
+                        <p className="break-all text-muted-foreground">{wallet.address}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-md bg-secondary px-3 py-2">
+                          <p className="font-semibold text-foreground">Blockchain</p>
+                          <p className="text-muted-foreground">{connectedChainName}</p>
+                        </div>
+                        <div className="rounded-md bg-secondary px-3 py-2">
+                          <p className="font-semibold text-foreground">Chain ID</p>
+                          <p className="text-muted-foreground">{wallet.chainId ?? 'Unknown'}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDisconnectWallet}
+                      className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-semibold text-foreground hover:border-primary"
+                    >
+                      <LogOut size={16} />
+                      Disconnect Wallet
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
 
           {/* Mobile Menu Button */}
@@ -359,14 +416,43 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
                     Sign Up
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={handleWalletButton}
-                  className="payment-cta w-full justify-center gap-2"
-                >
-                  <Wallet size={16} />
-                  {wallet ? 'Disconnect Wallet' : 'Connect Wallet'}
-                </button>
+                {wallet ? (
+                  <div className="rounded-lg border border-border bg-card p-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsWalletOpen((value) => !value)}
+                      className="payment-cta w-full justify-center gap-2"
+                    >
+                      <Wallet size={16} />
+                      Wallet Details
+                      <ChevronDown size={15} className={`transition-transform ${isWalletOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {isWalletOpen && (
+                      <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+                        <p><span className="font-semibold text-foreground">Address:</span> {formatWalletAddress(wallet.address)}</p>
+                        <p><span className="font-semibold text-foreground">Blockchain:</span> {connectedChainName}</p>
+                        <p><span className="font-semibold text-foreground">Provider:</span> {wallet.provider}</p>
+                        <button
+                          type="button"
+                          onClick={handleDisconnectWallet}
+                          className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-semibold text-foreground"
+                        >
+                          <LogOut size={16} />
+                          Disconnect Wallet
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleWalletButton}
+                    className="payment-cta w-full justify-center gap-2"
+                  >
+                    <Wallet size={16} />
+                    Connect Wallet
+                  </button>
+                )}
                 {walletError && <p className="text-sm text-destructive text-center">{walletError}</p>}
               </div>
             </div>
@@ -376,5 +462,16 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
     </header>
   );
 };
+
+function chainLabel(chainId?: number) {
+  if (!chainId) return 'Unknown network';
+
+  const chains: Record<number, string> = {
+    42220: 'Celo Mainnet',
+    44787: 'Celo Alfajores',
+  };
+
+  return chains[chainId] ?? `Chain ${chainId}`;
+}
 
 export default Header;

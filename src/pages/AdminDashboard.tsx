@@ -1195,6 +1195,48 @@ const CouponManager = ({
   </OperationsPanel>
 );
 
+
+const PaymentProof = ({ payment }: { payment: AdminPayment }) => {
+  const metadata = payment.providerMetadata;
+  const proof = metadata?.onChainProof;
+  const detailRows = [
+    metadata?.paymentMode ? ['Mode', metadata.paymentMode.replaceAll('_', ' ')] : null,
+    metadata?.treasuryAddress ? ['Treasury', metadata.treasuryAddress] : null,
+    metadata?.paymentContractAddress ? ['Contract', metadata.paymentContractAddress] : null,
+    metadata?.amountUnits ? ['Amount Units', metadata.amountUnits] : null,
+    proof?.payer ? ['Payer', proof.payer] : null,
+    proof?.from ? ['From', proof.from] : null,
+    proof?.to ? ['To', proof.to] : null,
+    proof?.receiverAddress ? ['Receiver', proof.receiverAddress] : null,
+    proof?.contractAddress ? ['Proof Contract', proof.contractAddress] : null,
+    proof?.blockNumber ? ['Block', proof.blockNumber] : null,
+  ].filter(Boolean) as Array<[string, string]>;
+
+  if (!metadata && !proof && !payment.receiverAddress && !payment.transactionHash) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 rounded-md bg-secondary/60 p-3 text-xs text-muted-foreground">
+      <p className="mb-2 font-bold uppercase tracking-wide text-foreground">Payment proof</p>
+      <div className="space-y-1">
+        {payment.receiverAddress && (
+          <p className="break-all"><span className="font-semibold text-foreground">Receiver:</span> {payment.receiverAddress}</p>
+        )}
+        {payment.transactionHash && (
+          <p className="break-all"><span className="font-semibold text-foreground">Transaction:</span> {payment.transactionHash}</p>
+        )}
+        {detailRows.map(([label, value]) => (
+          <p key={label} className="break-all"><span className="font-semibold text-foreground">{label}:</span> {value}</p>
+        ))}
+        {metadata?.instruction && <p><span className="font-semibold text-foreground">Instruction:</span> {metadata.instruction}</p>}
+        {metadata?.confirmationNote && <p><span className="font-semibold text-foreground">Confirmation:</span> {metadata.confirmationNote}</p>}
+        {metadata?.verificationNote && <p><span className="font-semibold text-foreground">Verification:</span> {metadata.verificationNote}</p>}
+      </div>
+    </div>
+  );
+};
+
 const Metric = ({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: number }) => (
   <div className="rounded-lg border border-border bg-card p-5">
     <Icon className="text-primary mb-4" size={24} />
