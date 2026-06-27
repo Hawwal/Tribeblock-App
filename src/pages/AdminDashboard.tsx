@@ -59,6 +59,8 @@ import { formatWalletAddress, prepareGoodDollarReward } from '@/lib/wallet';
 
 const paymentFilters = ['', 'PENDING', 'REQUIRES_ACTION', 'CONFIRMED', 'FAILED'];
 const courseFilters = ['', 'DRAFT', 'UNDER_REVIEW', 'CHANGES_REQUESTED'];
+const safeArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : []);
+
 const applicationFilters = ['', 'PENDING', 'APPROVED', 'REJECTED'];
 type GithubSyncStatus = 'PENDING_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED';
 
@@ -217,21 +219,26 @@ const AdminDashboard: React.FC = () => {
     setMessage('');
 
     try {
-      const [nextOverview, nextPayments, nextCourses, nextApplications, nextGoodDollarConfig] = await Promise.all([
+      const [nextOverview, nextPayments, nextCourses, nextApplications] = await Promise.all([
         fetchAdminOverview(),
         fetchAdminPayments(paymentFilter || undefined),
         fetchAdminCourseReviewQueue(courseFilter || undefined),
         fetchAdminContributorApplications(applicationFilter || undefined),
-        fetchAdminGoodDollarConfig(),
       ]);
 
       setOverview(nextOverview);
-      setPayments(nextPayments);
-      setCourses(nextCourses);
-      setApplications(nextApplications);
-      setGoodDollarConfig(nextGoodDollarConfig);
+      setPayments(Array.isArray(nextPayments) ? nextPayments : []);
+      setCourses(Array.isArray(nextCourses) ? nextCourses : []);
+      setApplications(Array.isArray(nextApplications) ? nextApplications : []);
+
+      fetchAdminGoodDollarConfig()
+        .then(setGoodDollarConfig)
+        .catch(() => setGoodDollarConfig(null));
+
       if (isAdmin) {
-        setCoupons(await fetchAdminCoupons());
+        fetchAdminCoupons()
+          .then((nextCoupons) => setCoupons(Array.isArray(nextCoupons) ? nextCoupons : []))
+          .catch(() => setCoupons([]));
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to load admin dashboard.');
@@ -655,9 +662,9 @@ const AdminDashboard: React.FC = () => {
                         <p className="text-xs text-muted-foreground mt-2">
                           Author: {course.author?.displayName ?? 'Unassigned'} - Source: {course.sourcePath ?? 'Not connected'}
                         </p>
-                        {course.reviews[0]?.notes && (
+                        {safeArray(course.reviews)[0]?.notes && (
                           <p className="mt-3 rounded-md bg-secondary px-3 py-2 text-sm text-foreground">
-                            {course.reviews[0].notes}
+                            {safeArray(course.reviews)[0].notes}
                           </p>
                         )}
                         <div className="flex flex-wrap gap-2 mt-4">
@@ -706,7 +713,7 @@ const AdminDashboard: React.FC = () => {
                       <p className="text-sm text-muted-foreground">{application.email} - {application.country}</p>
                       <p className="text-xs text-muted-foreground break-all mt-2">Wallet: {application.walletAddress}</p>
                       <div className="flex flex-wrap gap-2 mt-3">
-                        {application.skills.slice(0, 4).map((skill) => (
+                        {safeArray(application.skills).slice(0, 4).map((skill) => (
                           <span key={skill} className="rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold text-foreground">
                             {skill}
                           </span>
@@ -732,7 +739,7 @@ const AdminDashboard: React.FC = () => {
                       <div className="mt-4 space-y-3">
                         <div className="rounded-md bg-secondary/50 p-3">
                           <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Synced contributions</p>
-                          {(application.contributions ?? []).slice(0, 3).map((contribution) => (
+                          {safeArray(application.contributions).slice(0, 3).map((contribution) => (
                             <div key={contribution.id} className="mt-2 text-sm">
                               <p className="font-semibold text-foreground">{contribution.title}</p>
                               <p className="text-xs text-muted-foreground">{contribution.contributionType} - {contribution.status}</p>
@@ -743,12 +750,12 @@ const AdminDashboard: React.FC = () => {
                               )}
                             </div>
                           ))}
-                          {!(application.contributions ?? []).length && <p className="mt-2 text-xs text-muted-foreground">No GitHub contributions synced yet.</p>}
+                          {!safeArray(application.contributions).length && <p className="mt-2 text-xs text-muted-foreground">No GitHub contributions synced yet.</p>}
                         </div>
 
                         <div className="rounded-md bg-secondary/50 p-3">
                           <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">G$ rewards</p>
-                          {(application.rewards ?? []).slice(0, 3).map((reward) => (
+                          {safeArray(application.rewards).slice(0, 3).map((reward) => (
                             <div key={reward.id} className="mt-2 rounded-md border border-border bg-background p-3">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div>
@@ -769,7 +776,7 @@ const AdminDashboard: React.FC = () => {
                               <p className="mt-2 break-all text-[11px] text-muted-foreground">Reward ID: {reward.id}</p>
                             </div>
                           ))}
-                          {!(application.rewards ?? []).length && <p className="mt-2 text-xs text-muted-foreground">No rewards created yet.</p>}
+                          {!safeArray(application.rewards).length && <p className="mt-2 text-xs text-muted-foreground">No rewards created yet.</p>}
                         </div>
 
                         {isAdmin && application.status === 'APPROVED' && (
@@ -945,7 +952,7 @@ const AuthoringWorkspace: React.FC<AuthoringWorkspaceProps> = ({
                 onChange={onCourseChange}
               />
               <div className="space-y-2">
-                {courses.find((course) => course.id === selectedCourseId)?.modules.map((module) => (
+                {safeArray(courses.find((course) => course.id === selectedCourseId)?.modules).map((module) => (
                   <div key={module.id} className="rounded-md bg-secondary/60 p-3">
                     <p className="font-semibold text-foreground">{module.sortOrder}. {module.title}</p>
                     <p className="text-xs text-muted-foreground">{module.lessons.length} lessons</p>
@@ -1174,7 +1181,7 @@ const CouponManager = ({
                 <p className="font-bold text-foreground">{coupon.code}</p>
                 <StatusPill status={coupon.isActive ? 'ACTIVE' : 'INACTIVE'} />
               </div>
-              <p className="text-sm text-muted-foreground mt-1">{coupon.discountPercent}% off {coupon.appliesToTiers.join(', ')}</p>
+              <p className="text-sm text-muted-foreground mt-1">{coupon.discountPercent}% off {safeArray(coupon.appliesToTiers).join(', ')}</p>
               <p className="text-xs text-muted-foreground mt-1">
                 Redeemed {coupon.redemptionCount}{coupon.maxRedemptions ? ` / ${coupon.maxRedemptions}` : ''}
               </p>
