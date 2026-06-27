@@ -4,7 +4,7 @@ import { Menu, X, ChevronDown, Rocket, LogOut, UserCircle, Wallet, ShieldCheck }
 import { motion, AnimatePresence } from 'framer-motion';
 import tribeBlockLogo from '@/assets/tribe-block-logo.png';
 import { AUTH_SESSION_EVENT, clearSession, getSession, type AuthSession } from '@/lib/auth';
-import { connectCeloWallet, formatWalletAddress, getConnectedWallet, WALLET_EVENT, type ConnectedWallet } from '@/lib/wallet';
+import { clearConnectedWallet, connectCeloWallet, formatWalletAddress, getConnectedWallet, WALLET_EVENT, type ConnectedWallet } from '@/lib/wallet';
 
 interface HeaderProps {
   onSignUpClick?: () => void;
@@ -72,6 +72,23 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
     } catch (error) {
       setWalletError(error instanceof Error ? error.message : 'Unable to connect wallet.');
     }
+  };
+
+  const handleDisconnectWallet = () => {
+    clearConnectedWallet();
+    setWallet(null);
+    setWalletError('');
+    setIsMenuOpen(false);
+    setIsAccountOpen(false);
+  };
+
+  const handleWalletButton = () => {
+    if (wallet) {
+      handleDisconnectWallet();
+      return;
+    }
+
+    void handleConnectWallet();
   };
 
   return (
@@ -189,6 +206,16 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
                           >
                             Dashboard
                           </Link>
+                          {wallet && (
+                            <button
+                              type="button"
+                              onClick={handleDisconnectWallet}
+                              className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-semibold text-foreground hover:border-primary"
+                            >
+                              <Wallet size={16} />
+                              Disconnect Wallet
+                            </button>
+                          )}
                           <button
                             onClick={handleSignOut}
                             className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-semibold text-foreground hover:border-primary"
@@ -210,10 +237,15 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
                 Sign Up
               </button>
             )}
-            <button type="button" onClick={handleConnectWallet} className="payment-cta gap-2">
+            <button
+              type="button"
+              onClick={handleWalletButton}
+              className="payment-cta gap-2"
+              title={wallet ? 'Disconnect wallet' : 'Connect wallet'}
+            >
               <Wallet size={16} />
               <span className="hidden xl:inline">{wallet ? formatWalletAddress(wallet.address) : 'Connect Wallet'}</span>
-              <span className="xl:hidden">{wallet ? 'Wallet' : 'Connect'}</span>
+              <span className="xl:hidden">{wallet ? 'Disconnect' : 'Connect'}</span>
             </button>
           </div>
 
@@ -329,11 +361,11 @@ const Header: React.FC<HeaderProps> = ({ onSignUpClick }) => {
                 )}
                 <button
                   type="button"
-                  onClick={handleConnectWallet}
+                  onClick={handleWalletButton}
                   className="payment-cta w-full justify-center gap-2"
                 >
                   <Wallet size={16} />
-                  {wallet ? formatWalletAddress(wallet.address) : 'Connect Wallet'}
+                  {wallet ? 'Disconnect Wallet' : 'Connect Wallet'}
                 </button>
                 {walletError && <p className="text-sm text-destructive text-center">{walletError}</p>}
               </div>

@@ -9,7 +9,7 @@ interface SignUpModalProps {
   onClose: () => void;
 }
 
-type SignUpMethod = 'options' | 'email' | 'login' | 'passkey';
+type SignUpMethod = 'options' | 'email' | 'login-options' | 'login' | 'passkey';
 
 const GoogleIcon = () => (
   <svg viewBox="0 0 24 24" width="20" height="20">
@@ -86,7 +86,7 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
 
     setErrors({});
     setStatusMessage(
-      'Passkeys are staged for the next auth hardening pass. The backend still needs WebAuthn challenge and credential endpoints before this can create an account.',
+      'Passkeys are staged for the next auth hardening pass. The backend still needs WebAuthn challenge and credential endpoints before this can sign you in or create an account.',
     );
   };
 
@@ -289,11 +289,88 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
                       onClick={() => {
                         setErrors({});
                         setStatusMessage('');
-                        setMethod('login');
+                        setMethod('login-options');
                       }}
                       className="text-primary hover:underline font-medium"
                     >
                       Log In
+                    </button>
+                  </p>
+                </div>
+              )}
+
+              {method === 'login-options' && (
+                <div className="space-y-4">
+                  <button
+                    type="button"
+                    onClick={() => setMethod('options')}
+                    className="text-sm text-muted-foreground hover:text-foreground mb-4"
+                  >
+                    Back to sign up
+                  </button>
+
+                  <div className="text-center mb-6">
+                    <h3 className="text-xl font-bold text-foreground mb-2">Log in to Tribe Block</h3>
+                    <p className="text-muted-foreground text-sm">Choose the same provider you used to create your account.</p>
+                  </div>
+
+                  <button
+                    onClick={() => handleOAuth('google')}
+                    disabled={isLoading}
+                    className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-border rounded-xl hover:bg-secondary/50 transition-colors disabled:opacity-50"
+                  >
+                    <GoogleIcon />
+                    <span className="font-medium text-foreground">Continue with Google</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleOAuth('github')}
+                    disabled={isLoading}
+                    className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-border rounded-xl hover:bg-secondary/50 transition-colors disabled:opacity-50"
+                  >
+                    <Github size={20} />
+                    <span className="font-medium text-foreground">Continue with GitHub</span>
+                  </button>
+
+                  <button
+                    onClick={() => setMethod('passkey')}
+                    disabled={isLoading}
+                    className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl hover:from-purple-700 hover:to-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    <Fingerprint size={20} />
+                    <span className="font-medium">Continue with Passkey</span>
+                  </button>
+
+                  <button
+                    onClick={() => setMethod('login')}
+                    disabled={isLoading}
+                    className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-secondary text-foreground rounded-xl hover:bg-secondary/80 transition-colors disabled:opacity-50"
+                  >
+                    <Mail size={20} />
+                    <span className="font-medium">Log in with Email</span>
+                  </button>
+
+                  <div className="relative my-6">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-border" />
+                    </div>
+                    <div className="relative flex justify-center text-sm">
+                      <span className="px-4 bg-card text-muted-foreground">OR</span>
+                    </div>
+                  </div>
+
+                  <p className="text-center text-muted-foreground">
+                    New to Tribe Block?{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setErrors({});
+                        setStatusMessage('');
+                        setMethod('options');
+                      }}
+                      className="text-primary hover:underline font-medium"
+                    >
+                      Create an account
                     </button>
                   </p>
                 </div>
@@ -313,7 +390,7 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
                     <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-r from-purple-600 to-blue-600 flex items-center justify-center">
                       <Fingerprint size={32} className="text-white" />
                     </div>
-                    <h3 className="text-xl font-bold text-foreground mb-2">Passkey Sign Up</h3>
+                    <h3 className="text-xl font-bold text-foreground mb-2">Continue with Passkey</h3>
                     <p className="text-muted-foreground text-sm">
                       Use Face ID, Touch ID, Windows Hello, or a security key
                     </p>
@@ -349,7 +426,7 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
                     disabled={isLoading}
                     className="w-full btn-primary py-3"
                   >
-                    {isLoading ? 'Creating Account...' : 'Continue with Passkey'}
+                    {isLoading ? 'Preparing Passkey...' : 'Continue with Passkey'}
                   </button>
                 </div>
               )}
@@ -537,7 +614,7 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
                       onClick={() => {
                         setErrors({});
                         setStatusMessage('');
-                        setMethod('login');
+                        setMethod('login-options');
                       }}
                       className="text-primary hover:underline font-medium"
                     >
@@ -551,10 +628,10 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
                 <form onSubmit={handleEmailLogin} className="space-y-4">
                   <button
                     type="button"
-                    onClick={() => setMethod('options')}
+                    onClick={() => setMethod('login-options')}
                     className="text-sm text-muted-foreground hover:text-foreground mb-4"
                   >
-                    Back to options
+                    Back to login options
                   </button>
 
                   <div>
@@ -623,7 +700,7 @@ const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose }) => {
                       onClick={() => {
                         setErrors({});
                         setStatusMessage('');
-                        setMethod('email');
+                        setMethod('options');
                       }}
                       className="text-primary hover:underline font-medium"
                     >
